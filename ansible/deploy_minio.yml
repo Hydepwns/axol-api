@@ -1,0 +1,53 @@
+---
+- name: Deploy MinIO on Blockchain API Server
+  hosts: blockchain_api_servers
+  become: yes
+  vars:
+    minio_version: "20241218131544.0.0"
+    minio_user: "minio-user"
+
+  roles:
+    - role: dubzland.minio
+      vars:
+        minio_version: "{{ minio_version }}"
+        minio_user: "{{ minio_user }}"
+        minio_group: "{{ minio_group }}"
+        minio_volumes: "{{ minio_volumes }}"
+        minio_opts: "{{ minio_opts }}"
+        minio_root_user: "{{ minio_root_user }}"
+        minio_root_password: "{{ minio_root_password }}"
+        minio_directories: "{{ minio_directories }}"
+
+    - role: grafana
+
+  pre_tasks:
+    - name: Ensure system is up to date
+      apt:
+        update_cache: yes
+        upgrade: dist
+
+    - name: Install NTP for time synchronization
+      apt:
+        name: ntp
+        state: present
+
+    - name: Disable conflicting services
+      service:
+        name: "{{ item }}"
+        state: stopped
+        enabled: no
+      loop:
+        - mlocate
+        - auditd
+        - fstrim
+
+  post_tasks:
+    - name: Install Prometheus node exporter
+      apt:
+        name: prometheus-node-exporter
+        state: present
+
+    - name: Install Grafana
+      apt:
+        name: grafana
+        state: present 

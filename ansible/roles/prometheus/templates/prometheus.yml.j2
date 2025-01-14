@@ -1,0 +1,12 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'web3'
+    static_configs:
+      - targets: {{ prometheus_web3_targets | to_nice_yaml }}
+
+  # Add additional job configurations as needed
+  - job_name: 'ethereum_nodes'
+    static_configs:
+      - targets: {{ ethereum_node_targets | to_nice_yaml }} 

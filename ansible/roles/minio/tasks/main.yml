@@ -1,0 +1,81 @@
+---
+- name: Update the package index
+  ansible.builtin.apt:
+    update_cache: yes
+
+- name: Upgrade all packages to the latest version
+  ansible.builtin.apt:
+    upgrade: dist
+
+- name: Install required packages
+  ansible.builtin.apt:
+    name:
+      - wget
+      - curl
+      - net-tools
+    state: present
+
+- name: Ensure necessary ports are open
+  ansible.builtin.ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop:
+    - 9000
+    - 9001
+
+- name: Check available disk space
+  ansible.builtin.shell: "df --output=avail / | tail -n 1"
+  register: disk_space
+
+- name: Fail if disk space is less than 10GB
+  ansible.builtin.fail:
+    msg: "Not enough disk space. At least 10GB is required."
+  when: disk_space.stdout | int < 10485760
+
+- name: Ensure MinIO user and group exist
+  ansible.builtin.group:
+    name: "{{ minio_group }}"
+    state: present
+
+- name: Ensure MinIO user exists
+  ansible.builtin.user:
+    name: "{{ minio_user }}"
+    group: "{{ minio_group }}"
+    system: yes
+    create_home: no
+
+- name: Download MinIO binary
+  ansible.builtin.get_url:
+    url: "https://dl.min.io/server/minio/release/linux-amd64/archive/minio_{{ minio_version }}_amd64.deb"
+    dest: "/tmp/minio.deb"
+
+- name: Install MinIO
+  ansible.builtin.apt:
+    deb: "/tmp/minio.deb"
+
+- name: Create MinIO directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ minio_user }}"
+    group: "{{ minio_group }}"
+  loop: "{{ minio_directories }}"
+
+- name: Deploy systemd service file
+  ansible.builtin.template:
+    src: minio.service.j2
+    dest: /usr/lib/systemd/system/minio.service
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: yes
+
+- name: Enable and start MinIO service
+  ansible.builtin.systemd:
+    name: minio
+    enabled: yes
+    state: started 

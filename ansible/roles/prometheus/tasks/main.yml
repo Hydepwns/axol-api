@@ -1,0 +1,34 @@
+---
+- name: Download Prometheus
+  get_url:
+    url: "https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+    dest: /tmp/prometheus.tar.gz
+
+- name: Extract Prometheus
+  unarchive:
+    src: /tmp/prometheus.tar.gz
+    dest: /opt/
+    remote_src: yes
+
+- name: Configure Prometheus
+  template:
+    src: prometheus.yml.j2
+    dest: /opt/prometheus-{{ prometheus_version }}.linux-amd64/prometheus.yml
+
+- name: Create Prometheus systemd service file
+  template:
+    src: prometheus.service.j2
+    dest: /etc/systemd/system/prometheus.service
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Reload systemd
+  systemd:
+    daemon_reload: yes
+
+- name: Enable and start Prometheus service
+  systemd:
+    name: prometheus
+    enabled: yes
+    state: started 

@@ -1,0 +1,12 @@
+[Unit]
+Description=Prometheus
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/prometheus-{{ prometheus_version }}.linux-amd64/prometheus --config.file=/opt/prometheus-{{ prometheus_version }}.linux-amd64/prometheus.yml
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,25 @@
+# Ignore Ansible temporary files
+*.retry
+
+# Ignore role dependencies
+roles/*/files/
+roles/*/templates/
+roles/*/vars/
+roles/*/defaults/
+roles/*/meta/
+roles/*/handlers/
+roles/*/tasks/
+roles/*/tests/
+roles/*/molecule/
+
+# Ignore system files
+.DS_Store
+Thumbs.db
+
+# Ignore Python virtual environments
+venv/
+__pycache__/
+*.py[cod]
+
+# Ignore Ansible inventory files
+inventory.ini

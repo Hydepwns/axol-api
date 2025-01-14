@@ -1,34 +1,38 @@
 ---
 - name: Download Prometheus
-  get_url:
+  ansible.builtin.get_url:
     url: "https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
     dest: /tmp/prometheus.tar.gz
+    mode: '0755'
 
 - name: Extract Prometheus
-  unarchive:
+  ansible.builtin.unarchive:
     src: /tmp/prometheus.tar.gz
     dest: /opt/
-    remote_src: yes
+    remote_src: true
 
 - name: Configure Prometheus
-  template:
+  ansible.builtin.template:
     src: prometheus.yml.j2
     dest: /opt/prometheus-{{ prometheus_version }}.linux-amd64/prometheus.yml
+    owner: root
+    group: root
+    mode: '0644'
 
 - name: Create Prometheus systemd service file
-  template:
+  ansible.builtin.template:
     src: prometheus.service.j2
-    dest: /etc/systemd/system/prometheus.service
+    dest: /usr/lib/systemd/system/prometheus.service
     owner: root
     group: root
     mode: '0644'
 
 - name: Reload systemd
-  systemd:
-    daemon_reload: yes
+  ansible.builtin.systemd:
+    daemon_reload: true
 
 - name: Enable and start Prometheus service
-  systemd:
+  ansible.builtin.systemd:
     name: prometheus
-    enabled: yes
-    state: started 
+    enabled: true
+    state: restarted

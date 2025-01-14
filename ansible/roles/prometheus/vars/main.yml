@@ -2,4 +2,3 @@
 prometheus_version: "{{ prometheus_version }}"
 prometheus_web3_targets: "{{ prometheus_web3_targets }}"
 prometheus_ethereum_node_targets: "{{ prometheus_ethereum_node_targets }}"
-

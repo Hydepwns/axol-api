@@ -1,11 +1,11 @@
 ---
 - name: Install Grafana
-  apt:
+  ansible.builtin.apt:
     name: grafana
-    state: present
+    state: latest
 
 - name: Configure Grafana
-  template:
+  ansible.builtin.template:
     src: grafana.ini.j2
     dest: /etc/grafana/grafana.ini
     owner: root
@@ -14,18 +14,11 @@
   notify: Restart Grafana
 
 - name: Enable Grafana service
-  systemd:
+  ansible.builtin.systemd:
     name: grafana-server
-    enabled: yes
+    enabled: true
 
 - name: Start Grafana service
-  systemd:
+  ansible.builtin.systemd:
     name: grafana-server
     state: started
-
-- name: Restart Grafana
-  systemd:
-    name: grafana-server
-    state: restarted
-  when: false
-  listen: Restart Grafana

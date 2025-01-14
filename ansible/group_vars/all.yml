@@ -12,10 +12,12 @@ minio_directories:
 grafana_version: "latest"
 grafana_user: "admin"
 grafana_password: "admin"
+grafana_package: "grafana"
+grafana_http_port: 3000
+
 
 ntp_package: "ntp"
 prometheus_node_exporter_package: "prometheus-node-exporter"
-grafana_package: "grafana"
 
 blockchain_api_servers:
   - server1.example.com

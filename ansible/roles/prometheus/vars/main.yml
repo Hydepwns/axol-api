@@ -1,6 +1,5 @@
 ---
-prometheus_version: "2.31.1"
-prometheus_web3_targets:
-  - 'localhost:9090'
-prometheus_ethereum_node_targets:
-  - 'localhost:9090'
+prometheus_version: "{{ prometheus_version }}"
+prometheus_web3_targets: "{{ prometheus_web3_targets }}"
+prometheus_ethereum_node_targets: "{{ prometheus_ethereum_node_targets }}"
+

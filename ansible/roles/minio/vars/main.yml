@@ -1,12 +1,8 @@
-minio_version: "20241218131544.0.0"
-minio_user: "minio-user"
-minio_group: "minio-user"
-minio_volumes: "https://minio{1...4}.example.net:9000/mnt/disk{1...4}/minio"
-minio_opts: "--console-address :9001"
-minio_root_user: "minioadmin"
-minio_root_password: "minio-secret-key-CHANGE-ME"
-minio_directories:
-  - /mnt/disk1
-  - /mnt/disk2
-  - /mnt/disk3
-  - /mnt/disk4 
+minio_version: "{{ minio_version }}"
+minio_user: "{{ minio_user }}"
+minio_group: "{{ minio_group }}"
+minio_volumes: "{{ minio_volumes }}"
+minio_opts: "{{ minio_opts }}"
+minio_root_user: "{{ minio_root_user }}"
+minio_root_password: "{{ minio_root_password }}"
+minio_directories: "{{ minio_directories }}"

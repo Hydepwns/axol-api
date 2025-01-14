@@ -1,0 +1,30 @@
+minio_version: "20241218131544.0.0"
+minio_user: "minio-user"
+minio_group: "minio-group"
+minio_volumes:
+  - /mnt/data
+minio_opts: ""
+minio_root_user: "root"
+minio_root_password: "changeme"
+minio_directories:
+  - /mnt/data
+
+grafana_version: "latest"
+grafana_user: "admin"
+grafana_password: "admin"
+
+ntp_package: "ntp"
+prometheus_node_exporter_package: "prometheus-node-exporter"
+grafana_package: "grafana"
+
+blockchain_api_servers:
+  - server1.example.com
+  - server2.example.com
+
+web3_nodes:
+  - web3_node_1
+  - web3_node_2
+
+ethereum_nodes:
+  - ethereum_node_1
+  - ethereum_node_2

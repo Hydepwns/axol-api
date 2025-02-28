@@ -9,7 +9,7 @@
     src: grafana.ini.j2
     dest: /etc/grafana/grafana.ini
     owner: root
-    group: grafana
+    group: root
     mode: '0644'
   notify: Restart Grafana
 

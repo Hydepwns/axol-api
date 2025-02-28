@@ -1,3 +1,4 @@
+---
 minio_version: "{{ minio_version }}"
 minio_user: "{{ minio_user }}"
 minio_group: "{{ minio_group }}"

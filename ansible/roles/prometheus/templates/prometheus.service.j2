@@ -5,7 +5,7 @@ After=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/opt/prometheus-{{ prometheus_version }}.linux-amd64/prometheus --config.file=/opt/prometheus-{{ prometheus_version }}.linux-amd64/prometheus.yml
+ExecStart=/opt/prometheus-{{ prometheus_version }}.linux-amd64/prometheus --config.file=/opt/prometheus-{{ prometheus_version }}.linux-amd64/prometheus.yaml
 Restart=on-failure
 
 [Install]

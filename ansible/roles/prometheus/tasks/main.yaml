@@ -13,8 +13,8 @@
 
 - name: Configure Prometheus
   ansible.builtin.template:
-    src: prometheus.yml.j2
-    dest: /opt/prometheus-{{ prometheus_version }}.linux-amd64/prometheus.yml
+    src: prometheus.yaml.j2
+    dest: /opt/prometheus-{{ prometheus_version }}.linux-amd64/prometheus.yaml
     owner: root
     group: root
     mode: '0644'

@@ -1,0 +1,3 @@
+---
+prometheus_version: "{{ prometheus_version }}"
+prometheus_node_targets: "{{ prometheus_node_targets }}"

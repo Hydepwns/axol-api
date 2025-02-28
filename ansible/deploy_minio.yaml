@@ -1,10 +1,7 @@
 ---
-- name: Deploy MinIO on Blockchain API Server
-  hosts: blockchain_api_servers
+- name: Deploy MinIO on for axol-api-servers
+  hosts: minio_servers
   become: true
-  vars:
-    minio_version: "{{ minio_version }}"
-    minio_user: "{{ minio_user }}"
 
   roles:
     - role: minio
@@ -15,18 +12,11 @@
         minio_volumes: "{{ minio_volumes }}"
         minio_opts: "{{ minio_opts }}"
 
-    - role: grafana
-
   pre_tasks:
     - name: Ensure system is up to date
       apt:
         update_cache: true
         upgrade: dist
-
-    - name: Install NTP for time synchronization
-      apt:
-        name: ntp
-        state: present
 
     - name: Disable conflicting services
       service:
@@ -37,14 +27,3 @@
         - mlocate
         - auditd
         - fstrim
-
-  post_tasks:
-    - name: Install Prometheus node exporter
-      apt:
-        name: prometheus-node-exporter
-        state: present
-
-    - name: Install Grafana
-      apt:
-        name: grafana
-        state: present

@@ -1,0 +1,17 @@
+# Theme settings
+remote_theme: pages-themes/minimal@v0.2.0 # or whatever theme you prefer
+plugins:
+  - jekyll-remote-theme
+  - jekyll-relative-links
+
+# Site settings
+title: DROO.FOO
+description: DROO.FOO
+baseurl: ""
+url: "https://api.droo.foo"
+
+# Build settings
+markdown: kramdown
+include:
+  - "**/*.md"
+  - "**/*.markdown"

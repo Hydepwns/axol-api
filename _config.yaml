@@ -15,3 +15,7 @@ markdown: kramdown
 include:
   - "**/*.md"
   - "**/*.markdown"
+
+# Theme overrides
+sass:
+  style: compressed

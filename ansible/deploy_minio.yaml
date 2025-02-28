@@ -1,25 +1,21 @@
 ---
-- name: Deploy MinIO on for axol-api-servers
+- name: Deploy MinIO
   hosts: minio_servers
   become: true
 
   roles:
     - role: minio
-      vars:
-        minio_version: "{{ minio_version }}"
-        minio_user: "{{ minio_user }}"
-        minio_group: "{{ minio_group }}"
-        minio_volumes: "{{ minio_volumes }}"
-        minio_opts: "{{ minio_opts }}"
+    - role: prometheus
+    - role: grafana
 
   pre_tasks:
     - name: Ensure system is up to date
-      apt:
+      ansible.builtin.apt:
         update_cache: true
         upgrade: dist
 
     - name: Disable conflicting services
-      service:
+      ansible.builtin.service:
         name: "{{ item }}"
         state: stopped
         enabled: false

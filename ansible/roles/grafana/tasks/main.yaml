@@ -2,7 +2,7 @@
 - name: Install Grafana
   ansible.builtin.apt:
     name: grafana
-    state: latest
+    state: present
 
 - name: Configure Grafana
   ansible.builtin.template:

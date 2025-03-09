@@ -1,0 +1,42 @@
+---
+- name: Converge
+  hosts: minio_servers
+  become: true
+  pre_tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: true
+        cache_valid_time: 3600
+      when: ansible_os_family == 'Debian'
+
+    - name: Ensure /etc/hosts has entries for all nodes
+      lineinfile:
+        path: /etc/hosts
+        line: "{{ hostvars[item].ansible_host }} {{ item }}"
+        state: present
+      loop: "{{ groups['minio_servers'] }}"
+      when: hostvars[item].ansible_host is defined
+
+    # Create test directories for MinIO data
+    - name: Ensure test directories exist for each node
+      file:
+        path: "/tmp/minio-data-{{ inventory_hostname }}"
+        state: directory
+        mode: '0755'
+
+    - name: Set node-specific data directories
+      set_fact:
+        minio_data_dirs: ["/tmp/minio-data-{{ inventory_hostname }}"]
+
+    - name: Set minio directories
+      set_fact:
+        minio_directories:
+          - "/tmp/minio-data-{{ inventory_hostname }}"
+
+    - name: Set host facts for distributed setup
+      set_fact:
+        minio_server_urls: "{% for host in groups['minio_servers'] %}http://{{ hostvars[host].ansible_host | default(host) }}:{{ minio_server_port }}/tmp/minio-data-{{ host }}{% if not loop.last %} {% endif %}{% endfor %}"
+      when: minio_cluster_mode | default(false)
+
+  roles:
+    - role: "../../"

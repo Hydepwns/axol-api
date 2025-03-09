@@ -1,9 +1,50 @@
 ---
-minio_version: "{{ minio_version }}"
-minio_user: "{{ minio_user }}"
-minio_group: "{{ minio_group }}"
-minio_volumes: "{{ minio_volumes }}"
-minio_opts: "{{ minio_opts }}"
-minio_root_user: "{{ minio_root_user }}"
-minio_root_password: "{{ minio_root_password }}"
-minio_directories: "{{ minio_directories }}"
+# General MinIO Configuration
+minio_version: "20241218131544.0.0"
+minio_user: "minio-user"
+minio_group: "minio-group"
+minio_volumes: "/mnt/minio"
+minio_opts: "--console-address 0.0.0.0:9001"
+
+# These values should be overridden through group_vars or host_vars with Ansible Vault
+# WARNING: Do not use these default values in production!
+minio_root_user: "admin"  # This should be overridden in protected vault files
+minio_root_password: "minioadmin"  # This should be overridden in protected vault files
+
+# Storage configuration
+minio_directories: ["/mnt/minio"]
+minio_min_disk_space_gb: 20
+
+# Network settings
+minio_server_port: 9000
+minio_console_port: 9001
+minio_bind_address: "0.0.0.0"
+
+# Cluster configuration
+minio_cluster_mode: false
+minio_server_count: 1
+# For distributed mode, use format: "http://host{1...4}/mnt/disk{1...4}"
+minio_server_urls: ""
+
+# SSL/TLS Configuration
+minio_enable_ssl: false
+# minio_ssl_certificate: "/etc/minio/certs/public.crt"
+# minio_ssl_key: "/etc/minio/certs/private.key"
+
+# Domain configuration
+minio_domain: "localhost"  # Set to Tailscale hostname in production
+
+# External access
+minio_external_access: false
+
+# Default single blockchain data type (legacy support)
+# blockchain_data_type: "ethereum"
+
+# Multiple blockchain data types (preferred)
+blockchain_data_types:
+  - "ethereum"
+  - "holesky"
+  - "ephemery"
+  - "optimism"
+  - "arbitrum"
+  - "base"

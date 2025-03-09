@@ -1,0 +1,105 @@
+---
+# deploy_minio_complete.yaml - Complete MinIO deployment playbook
+#
+# This playbook provides a complete MinIO deployment including:
+# - Server installation and configuration
+# - Disk setup and mounting
+# - Service configuration
+# - Client setup
+# - Tier configuration
+# - ILM policy application
+#
+# Usage examples:
+#   # Full deployment:
+#   ansible-playbook -i inventory.ini deploy_minio_complete.yaml
+#
+#   # Only setup disks:
+#   ansible-playbook -i inventory.ini deploy_minio_complete.yaml --tags disk
+#
+#   # Setup and configure tiering:
+#   ansible-playbook -i inventory.ini deploy_minio_complete.yaml --tags tier
+#
+#   # Apply ILM policies:
+#   ansible-playbook -i inventory.ini deploy_minio_complete.yaml --tags ilm
+
+- name: Deploy MinIO with complete configuration including tiering
+  hosts: minio_servers
+  become: true
+  vars:
+    # Server configuration
+    minio_server_url: "http://localhost:9000"
+    minio_console_url: "http://localhost:9001"
+    minio_setup_disks: true
+    minio_install: true
+    minio_configure_service: true
+    minio_configure: true
+    minio_setup_client: true
+
+    # Disk configuration
+    disk_devices: ["/dev/sda", "/dev/sdb"]
+    mount_points: ["/mnt/disk1", "/mnt/disk2"]
+    data_dir_name: "blockchain_data"
+
+    # Tier configuration
+    minio_setup_tier: true
+    minio_apply_ilm: true
+    tier_name: "ARCHIVE-TIER"
+    tier_port: 9010
+    tier_console_port: 9011
+    additional_disk: "/dev/nvme1n1"  # Optional, for tier storage
+    additional_mount: "/mnt/disk3"
+    transition_days: 90
+
+    # Bucket configuration
+    minio_buckets:
+      - arbitrumdata
+      - ethereumdata
+      - holeskydata
+      - optimismdata
+      - ephemerydata
+      - management
+
+    # Access credentials - now coming from secrets file
+    minio_access_key: "{{ minio_credentials.access_key | default('') }}"
+    minio_secret_key: "{{ minio_credentials.secret_key | default('') }}"
+
+  pre_tasks:
+    - name: Validate credentials for production deployment
+      fail:
+        msg: |
+          ERROR: Default or empty credentials detected for MinIO in a production environment.
+          Please set secure credentials in your encrypted secrets file before deploying to production.
+          See ansible/group_vars/all/secrets_example.yml for an example.
+      when:
+        - (minio_access_key == "" or minio_secret_key == "" or
+           minio_access_key == "minioadmin" or minio_secret_key == "minioadmin")
+        - ansible_host != "localhost"
+        - inventory_hostname != "localhost"
+
+  roles:
+    - role: minio
+
+  post_tasks:
+    - name: Verify MinIO is accessible
+      uri:
+        url: "{{ minio_server_url }}/minio/health/live"
+        status_code: 200
+      register: minio_health
+      delegate_to: localhost
+      ignore_errors: true
+
+    - name: Display MinIO health status
+      debug:
+        msg: "MinIO health check: {{ 'SUCCESS' if minio_health.status == 200 else 'FAILED - please check manually' }}"
+
+    - name: Verify MinIO console is accessible
+      uri:
+        url: "{{ minio_console_url }}"
+        status_code: 200
+      register: console_health
+      delegate_to: localhost
+      ignore_errors: true
+
+    - name: Display MinIO console status
+      debug:
+        msg: "MinIO console check: {{ 'SUCCESS' if console_health.status == 200 else 'FAILED - please check manually' }}"

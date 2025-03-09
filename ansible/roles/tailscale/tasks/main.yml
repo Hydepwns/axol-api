@@ -1,0 +1,131 @@
+---
+# Tasks for configuring Tailscale
+
+- name: Check if Tailscale is already installed
+  ansible.builtin.command: "which tailscale"
+  register: tailscale_check
+  changed_when: false
+  failed_when: false
+  check_mode: no
+
+- name: Install Tailscale (Debian/Ubuntu)
+  when: tailscale_check.rc != 0 and ansible_os_family == "Debian"
+  block:
+    - name: Add Tailscale repository key
+      ansible.builtin.apt_key:
+        url: "{{ tailscale_repo_key_url }}"
+        state: present
+
+    - name: Add Tailscale repository
+      ansible.builtin.apt_repository:
+        repo: "deb {{ tailscale_repo_url | regex_replace('https://pkgs.tailscale.com/stable/ubuntu/focal.list', 'https://pkgs.tailscale.com/stable/ubuntu focal main') }}"
+        state: present
+        filename: tailscale
+
+    - name: Install Tailscale package
+      ansible.builtin.apt:
+        name: "{{ tailscale_package }}"
+        state: present
+        update_cache: yes
+
+- name: Install Tailscale (RHEL/CentOS)
+  when: tailscale_check.rc != 0 and ansible_os_family == "RedHat"
+  block:
+    - name: Add Tailscale repository
+      ansible.builtin.yum_repository:
+        name: tailscale
+        description: Tailscale stable
+        baseurl: https://pkgs.tailscale.com/stable/centos/$releasever/$basearch
+        enabled: yes
+        gpgcheck: yes
+        gpgkey: https://pkgs.tailscale.com/stable/centos/repo.gpg
+
+    - name: Install Tailscale package
+      ansible.builtin.yum:
+        name: "{{ tailscale_package }}"
+        state: present
+
+- name: Ensure Tailscale service is running and enabled
+  ansible.builtin.service:
+    name: tailscaled
+    state: started
+    enabled: yes
+
+- name: Build Tailscale configuration command
+  ansible.builtin.set_fact:
+    tailscale_up_command: "tailscale up"
+
+- name: Add auth key if provided
+  ansible.builtin.set_fact:
+    tailscale_up_command: "{{ tailscale_up_command }} --authkey={{ tailscale_auth_key }}"
+  when: tailscale_auth_key | length > 0
+
+- name: Add accept routes if enabled
+  ansible.builtin.set_fact:
+    tailscale_up_command: "{{ tailscale_up_command }} --accept-routes"
+  when: tailscale_accept_routes | bool
+
+- name: Add exit node configuration if enabled
+  ansible.builtin.set_fact:
+    tailscale_up_command: "{{ tailscale_up_command }} --exit-node-allow-lan-access"
+  when: tailscale_exit_node | bool and tailscale_exit_node_allow_lan_access | bool
+
+- name: Add advertise exit node if enabled
+  ansible.builtin.set_fact:
+    tailscale_up_command: "{{ tailscale_up_command }} --advertise-exit-node"
+  when: tailscale_advertise_exit_node | bool
+
+- name: Add advertise routes if specified
+  ansible.builtin.set_fact:
+    tailscale_up_command: "{{ tailscale_up_command }} --advertise-routes={{ tailscale_advertise_routes | join(',') }}"
+  when: tailscale_advertise_routes | length > 0
+
+- name: Add tags if specified
+  ansible.builtin.set_fact:
+    tailscale_up_command: "{{ tailscale_up_command }} --advertise-tags={{ tailscale_advertise_tags | join(',') }}"
+  when: tailscale_advertise_tags | length > 0
+
+- name: Configure Tailscale
+  ansible.builtin.shell: "{{ tailscale_up_command }}"
+  register: tailscale_config
+  changed_when: "'Success' in tailscale_config.stdout or 'must auth' in tailscale_config.stderr"
+  failed_when: false
+
+- name: Allow Tailscale traffic through firewall (UFW)
+  community.general.ufw:
+    rule: allow
+    interface: tailscale0
+    state: enabled
+  when: ansible_os_family == "Debian"
+  register: ufw_result
+  failed_when:
+    - ufw_result.failed is defined
+    - ufw_result.failed
+    - "'not found' not in ufw_result.msg"
+
+- name: Allow Tailscale traffic through firewall (firewalld)
+  ansible.posix.firewalld:
+    interface: tailscale0
+    permanent: yes
+    state: enabled
+    zone: trusted
+  when: ansible_os_family == "RedHat"
+  register: firewalld_result
+  failed_when:
+    - firewalld_result.failed is defined
+    - firewalld_result.failed
+    - "'not found' not in firewalld_result.msg"
+
+- name: Copy Tailscale ACL file
+  ansible.builtin.copy:
+    src: "{{ tailscale_acl_file }}"
+    dest: "/tmp/tailscale-acl.json"
+    mode: '0644'
+  when: tailscale_apply_acl | bool
+  register: acl_copy
+
+- name: Check Tailscale status
+  ansible.builtin.shell: "tailscale status --json"
+  register: tailscale_status
+  changed_when: false
+  failed_when: false

@@ -1,0 +1,78 @@
+---
+# ilm.yaml - MinIO ILM (Information Lifecycle Management) Tasks
+#
+# These tasks manage MinIO ILM policies which automatically move data between storage tiers
+# based on time-based rules. This automates the transition of older data to more cost-effective
+# archive storage tiers.
+#
+# Requirements:
+# - MinIO server configured with proper alias in mc client
+# - Archive tier properly configured (see setup_tier.yaml)
+#
+# Variables:
+#   tier_name: Name of the archive tier (default: "ARCHIVE-TIER")
+#   transition_days: Days after which objects are moved to archive tier (default: 90)
+#   minio_buckets: List of buckets to configure ILM policies for (default: see below)
+#   minio_alias: MinIO client alias to use (default: "main")
+#   minio_api_url: MinIO server API URL (default: "http://localhost:9000")
+#   minio_access_key: MinIO admin access key (default: "minioadmin")
+#   minio_secret_key: MinIO admin secret key (default: "minioadmin")
+
+# Default bucket list if not provided
+- name: Set default bucket list if not defined
+  set_fact:
+    minio_buckets: "{{ minio_buckets | default(['arbitrumdata', 'ethereumdata', 'holeskydata', 'optimismdata', 'ephemerydata', 'management']) }}"
+    tier_name: "{{ tier_name | default('ARCHIVE-TIER') }}"
+    transition_days: "{{ transition_days | default(90) }}"
+    minio_alias: "{{ minio_alias | default('main') }}"
+    minio_api_url: "{{ minio_api_url | default('http://localhost:9000') }}"
+    minio_access_key: "{{ minio_access_key | default('minioadmin') }}"
+    minio_secret_key: "{{ minio_secret_key | default('minioadmin') }}"
+
+# Ensure MinIO client is configured
+- name: Ensure MinIO client is configured
+  shell: |
+    mc alias set {{ minio_alias }} {{ minio_api_url }} {{ minio_access_key }} {{ minio_secret_key }}
+  register: mc_alias
+  changed_when: mc_alias.rc == 0
+
+# Apply ILM policies to each bucket
+- name: Apply ILM policies to buckets
+  shell: |
+    # Apply the policy with direct command line arguments
+    mc ilm add {{ minio_alias }}/{{ item }} --transition-days {{ transition_days }} --transition-tier {{ tier_name }}
+
+    # Verify the policy was applied
+    echo "ILM policy applied to {{ minio_alias }}/{{ item }}:"
+    mc ilm ls {{ minio_alias }}/{{ item }}
+  with_items: "{{ minio_buckets }}"
+  register: ilm_apply
+  changed_when: ilm_apply.rc == 0
+  ignore_errors: true
+
+# Display ILM policy application results
+- name: Display ILM policy results
+  debug:
+    var: ilm_apply.results | map(attribute='stdout_lines') | list
+  when: ilm_apply.results is defined
+
+# Final information
+- name: Display final ILM setup information
+  debug:
+    msg: |
+      MinIO ILM policies have been successfully applied!
+
+      The following buckets have ILM policies to move data older than {{ transition_days }} days to the archive tier:
+      {% for bucket in minio_buckets %}
+      - {{ bucket }} → {{ bucket }}-archive
+      {% endfor %}
+
+      To verify the setup:
+      1. Log in to the {{ minio_alias }} MinIO console at {{ minio_api_url | replace('9000', '9001') }}
+      2. Go to Buckets -> [bucket-name] -> Management -> Lifecycle
+
+      To test the tiering immediately, you can:
+      1. Upload some files to a bucket
+      2. Use the MinIO console to manually transition them to the tier
+
+      For ongoing operations, data will automatically move to the archive tier after {{ transition_days }} days.

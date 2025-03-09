@@ -1,0 +1,25 @@
+---
+# Axol API server specific configuration
+# Last updated: {{ ansible_date_time.date }}
+
+# API configuration
+api_port: 3000
+api_environment: "production"
+api_log_level: "info"
+api_enable_docs: true
+
+# Application settings
+api_rate_limit_requests: 100
+api_rate_limit_window: 60  # seconds
+api_request_timeout: 30    # seconds
+
+# Database configuration
+api_db_type: "minio"
+api_db_host: "localhost"
+api_db_port: 9000
+api_db_name: "axol"
+api_db_pool_size: 10
+
+# MinIO specific settings for API server
+minio_cluster_mode: false  # Single server deployment
+minio_server_count: 1

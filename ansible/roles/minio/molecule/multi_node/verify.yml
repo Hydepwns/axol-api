@@ -1,0 +1,96 @@
+---
+- name: Verify MinIO on API Server
+  hosts: minio_servers
+  become: true
+  tasks:
+    - name: Check if MinIO service is running
+      command: systemctl status minio
+      register: minio_status
+      changed_when: false
+      failed_when: false
+
+    - name: Verify MinIO service is active
+      assert:
+        that: "'active (running)' in minio_status.stdout"
+        fail_msg: "MinIO service is not running"
+        success_msg: "MinIO service is running"
+
+    - name: Check MinIO API endpoint
+      uri:
+        url: "http://127.0.0.1:9000/minio/health/live"
+        status_code: 200
+      register: minio_health
+      failed_when: false
+
+    - name: Verify MinIO API is responding
+      assert:
+        that: "minio_health.status == 200"
+        fail_msg: "MinIO API is not responding"
+        success_msg: "MinIO API is responding correctly"
+
+    - name: Check MinIO console
+      uri:
+        url: "http://127.0.0.1:9001"
+        status_code: 200
+      register: minio_console
+      failed_when: false
+
+    - name: Verify MinIO console is accessible
+      assert:
+        that: "minio_console.status == 200"
+        fail_msg: "MinIO console is not accessible"
+        success_msg: "MinIO console is accessible"
+
+- name: Verify Blockchain Nodes
+  hosts: blockchain_nodes
+  become: true
+  tasks:
+    - name: Check if MinIO client config exists
+      stat:
+        path: /etc/minio/client.conf
+      register: client_config
+
+    - name: Verify MinIO client config exists
+      assert:
+        that: "client_config.stat.exists"
+        fail_msg: "MinIO client config does not exist"
+        success_msg: "MinIO client config exists"
+
+    - name: Check node type configuration
+      command: grep -i "{{ 'dappnode' if inventory_hostname == 'minipc1' else 'avadao' }}" /etc/minio/client.conf
+      register: node_type_check
+      changed_when: false
+      failed_when: false
+
+    - name: Verify node type is correctly configured
+      assert:
+        that: "node_type_check.rc == 0 or 'Server:' in node_type_check.stdout"
+        fail_msg: "Node type is not correctly configured"
+        success_msg: "Node type is correctly configured"
+
+- name: Verify Compute Nodes
+  hosts: compute_nodes
+  become: true
+  tasks:
+    - name: Check if MinIO client config exists
+      stat:
+        path: /etc/minio/client.conf
+      register: client_config
+
+    - name: Verify MinIO client config exists
+      assert:
+        that: "client_config.stat.exists"
+        fail_msg: "MinIO client config does not exist"
+        success_msg: "MinIO client config exists"
+
+    - name: Check MinIO server reference
+      command: grep -i "Server:" /etc/minio/client.conf
+      register: server_check
+      changed_when: false
+      failed_when: false
+
+    - name: Verify MinIO server reference exists
+      assert:
+        that: "server_check.rc == 0"
+        fail_msg: "MinIO server reference does not exist"
+        success_msg: "MinIO server reference exists"

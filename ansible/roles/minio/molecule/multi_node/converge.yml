@@ -1,0 +1,95 @@
+---
+- name: Deploy MinIO on API Server
+  hosts: minio_servers
+  become: true
+  pre_tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: true
+        cache_valid_time: 3600
+      when: ansible_os_family == 'Debian'
+
+    - name: Ensure /etc/hosts has entries for all nodes
+      lineinfile:
+        path: /etc/hosts
+        line: "{{ hostvars[item].ansible_host | default(hostvars[item].ansible_default_ipv4.address) }} {{ item }}"
+        state: present
+      loop: "{{ groups['all'] }}"
+      when: hostvars[item].ansible_host is defined or hostvars[item].ansible_default_ipv4 is defined
+
+    # Create test directories for MinIO data
+    - name: Ensure test directories exist
+      file:
+        path: "/tmp/minio-data"
+        state: directory
+        mode: '0755'
+
+    - name: Set data directories
+      set_fact:
+        minio_data_dirs: ["/tmp/minio-data"]
+
+    - name: Set minio directories
+      set_fact:
+        minio_directories:
+          - "/tmp/minio-data"
+
+  roles:
+    - role: "../../"
+
+- name: Configure Blockchain Nodes
+  hosts: blockchain_nodes
+  become: true
+
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: true
+        cache_valid_time: 3600
+      when: ansible_os_family == 'Debian'
+
+    - name: Set node-specific configuration
+      set_fact:
+        node_type: "{{ 'dappnode' if inventory_hostname == 'minipc1' else 'avadao' }}"
+
+    - name: Create minio config directory
+      file:
+        path: /etc/minio
+        state: directory
+        mode: '0755'
+
+    - name: Configure mock connection to MinIO
+      copy:
+        content: |
+          # MinIO Client Configuration
+          # Server: {{ groups['minio_servers'][0] }}:9000
+          # Access Key: minioadmin
+          # Secret Key: minioadmin
+        dest: /etc/minio/client.conf
+        mode: '0644'
+
+- name: Configure Compute Nodes
+  hosts: compute_nodes
+  become: true
+
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: true
+        cache_valid_time: 3600
+      when: ansible_os_family == 'Debian'
+
+    - name: Create minio config directory
+      file:
+        path: /etc/minio
+        state: directory
+        mode: '0755'
+
+    - name: Configure mock connection to MinIO
+      copy:
+        content: |
+          # MinIO Client Configuration
+          # Server: {{ groups['minio_servers'][0] }}:9000
+          # Access Key: minioadmin
+          # Secret Key: minioadmin
+        dest: /etc/minio/client.conf
+        mode: '0644'

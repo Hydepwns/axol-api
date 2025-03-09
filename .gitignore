@@ -23,5 +23,21 @@ __pycache__/
 *.py[cod]
 
 # Ignore Ansible inventory files
-inventory.ini
+inventory.*
+!inventory.example.ini
 ansible.cfg
+
+# Sensitive information
+secrets.*
+!secrets_example.yml
+*vault.yml
+*vault.yaml
+*.vault
+.vault_pass*
+*password*
+*credential*
+tailscale-acl.json
+*.key
+*.pem
+*.crt
+*.env

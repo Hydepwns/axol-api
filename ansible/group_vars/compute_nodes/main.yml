@@ -1,0 +1,22 @@
+---
+# Compute nodes specific configuration
+# Last updated: {{ ansible_date_time.date }}
+
+# Compute resources
+compute_cores: 32
+compute_memory: "64G"
+compute_gpu_enabled: true
+compute_gpu_type: "NVIDIA"
+
+# Job configuration
+compute_max_jobs: 10
+compute_job_timeout: 3600  # seconds
+compute_queue_size: 100
+
+# Storage configuration
+compute_local_storage: "/mnt/compute_data"
+compute_temp_storage: "/mnt/tmp"
+
+# Network settings
+compute_api_port: 8080
+compute_worker_port: 8081

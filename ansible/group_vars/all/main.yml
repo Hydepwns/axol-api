@@ -1,0 +1,28 @@
+---
+# Global configuration for all servers
+# Last updated: {{ ansible_date_time.date }}
+
+# System configuration
+system_timezone: "UTC"
+system_locale: "en_US.UTF-8"
+
+# Network configuration
+tailscale_domain: "tail9b2ce8.ts.net"
+enable_firewall: true
+
+# Default MinIO storage paths (can be overridden by host variables)
+minio_data_dirs: ["/mnt/disk1/blockchain_data", "/mnt/disk2/blockchain_data"]
+
+# Common user settings
+admin_users:
+  - username: admin
+    shell: /bin/bash
+    sudo: true
+
+# Monitoring settings
+enable_monitoring: true
+monitoring_retention_days: 30
+
+# Backup configuration
+backup_enabled: true
+backup_retention_days: 90

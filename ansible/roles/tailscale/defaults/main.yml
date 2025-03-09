@@ -1,0 +1,21 @@
+---
+# Default variables for the Tailscale role
+
+# Tailscale installation
+tailscale_repo_key_url: "https://pkgs.tailscale.com/stable/ubuntu/focal.gpg"
+tailscale_repo_url: "https://pkgs.tailscale.com/stable/ubuntu/focal.list"
+tailscale_package: "tailscale"
+
+# Tailscale configuration
+tailscale_domain: "tail9b2ce8.ts.net"
+tailscale_auth_key: "" # Should be provided in vault or vars, not here
+tailscale_advertise_tags: []
+tailscale_accept_routes: yes
+tailscale_exit_node: no
+tailscale_exit_node_allow_lan_access: no
+tailscale_advertise_exit_node: no
+tailscale_advertise_routes: []
+
+# ACL Configuration
+tailscale_acl_file: "tailscale-acl.json"
+tailscale_apply_acl: yes  # Set to false if you don't want to apply ACL config

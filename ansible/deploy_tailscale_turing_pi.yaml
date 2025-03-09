@@ -1,0 +1,127 @@
+---
+# deploy_tailscale_turing_pi.yaml - Configure Tailscale on Turing Pi cluster
+# Ensures SSH access is enabled on all nodes in the Turing Pi cluster
+
+- name: Configure Tailscale on Turing Pi nodes
+  hosts: turingpi
+  become: true
+  vars:
+    tailscale_auth_key: "{{ tailscale_auth_key | default('') }}"
+    tailscale_hostname_prefix: "turingpi-node"
+    tailscale_tags: "tag:compute,tag:turing-pi,tag:cluster"
+
+  pre_tasks:
+    - name: Validate Tailscale authentication key
+      fail:
+        msg: |
+          ERROR: Tailscale authentication key is missing or empty.
+          Please set the 'tailscale_auth_key' variable in your encrypted secrets file
+          or provide it via environment variable using:
+          export TAILSCALE_KEY="your-auth-key" && ansible-playbook -i inventory.ini deploy_tailscale_turing_pi.yaml
+      when: tailscale_auth_key == ""
+
+    - name: Update and upgrade packages
+      apt:
+        update_cache: yes
+        upgrade: yes
+        cache_valid_time: 86400  # One day
+      register: apt_update
+
+    - name: Install required dependencies
+      apt:
+        name:
+          - apt-transport-https
+          - curl
+          - lsb-release
+          - ca-certificates
+          - gnupg
+        state: present
+
+    - name: Ensure SSH server is installed and enabled
+      apt:
+        name: openssh-server
+        state: present
+
+    - name: Configure SSH to allow key-based authentication
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PubkeyAuthentication'
+        line: 'PubkeyAuthentication yes'
+
+    - name: Restart SSH service to apply changes
+      service:
+        name: ssh
+        state: restarted
+        enabled: yes
+
+  tasks:
+    - name: Add Tailscale GPG key
+      apt_key:
+        url: https://pkgs.tailscale.com/stable/ubuntu/focal.gpg
+        state: present
+
+    - name: Add Tailscale repository
+      apt_repository:
+        repo: "deb https://pkgs.tailscale.com/stable/ubuntu focal main"
+        state: present
+        update_cache: yes
+
+    - name: Install Tailscale
+      apt:
+        name: tailscale
+        state: present
+
+    - name: Bring up Tailscale with SSH enabled
+      command: >
+        tailscale up
+        --authkey={{ tailscale_auth_key }}
+        --hostname={{ tailscale_hostname_prefix }}-{{ inventory_hostname_short }}
+        --advertise-tags={{ tailscale_tags }}
+        --ssh
+      args:
+        creates: /var/lib/tailscale/tailscaled.state
+
+    - name: Configure iptables for Tailscale
+      command: iptables -A INPUT -p tcp -m tcp --dport 41641 -j ACCEPT
+      register: iptables_result
+      changed_when: iptables_result.rc == 0
+      failed_when: false
+
+    - name: Make iptables rules persistent
+      apt:
+        name: iptables-persistent
+        state: present
+      register: iptables_persistent
+
+    - name: Save iptables rules if iptables-persistent was just installed
+      command: "{{ item }}"
+      with_items:
+        - iptables-save > /etc/iptables/rules.v4
+        - ip6tables-save > /etc/iptables/rules.v6
+      when: iptables_persistent.changed
+
+  post_tasks:
+    - name: Verify Tailscale is running
+      command: tailscale status
+      register: tailscale_status
+      changed_when: false
+
+    - name: Display Tailscale status
+      debug:
+        msg: "{{ tailscale_status.stdout_lines }}"
+
+    - name: Verify SSH over Tailscale
+      debug:
+        msg: |
+          Tailscale SSH should now be enabled on all nodes in the Turing Pi cluster.
+          You can connect to each node using:
+          ssh {{ tailscale_hostname_prefix }}-{{ inventory_hostname_short }}
+
+    - name: Show next steps
+      debug:
+        msg: |
+          Next steps:
+          1. Verify connections by running: tailscale status
+          2. Configure access controls in the Tailscale admin console
+          3. Set up automatic key rotation if needed
+          4. Consider setting up MagicDNS for easier node access

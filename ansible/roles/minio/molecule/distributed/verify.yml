@@ -1,0 +1,77 @@
+---
+- name: Verify
+  hosts: minio_servers
+  become: true
+  tasks:
+    - name: Check if MinIO service is running on all nodes
+      command: systemctl status minio
+      register: minio_status
+      changed_when: false
+      failed_when: false
+
+    - name: Verify MinIO is running on all nodes
+      assert:
+        that:
+          - "'active (running)' in minio_status.stdout"
+        fail_msg: "MinIO service is not running on {{ inventory_hostname }}"
+        success_msg: "MinIO service is running on {{ inventory_hostname }}"
+
+    - name: Check if MinIO web console is accessible
+      uri:
+        url: "http://127.0.0.1:9001"
+        status_code: 200
+      register: web_result
+      failed_when: false
+
+    - name: Assert web console is accessible
+      assert:
+        that:
+          - "web_result.status == 200"
+        fail_msg: "MinIO web console is not accessible on {{ inventory_hostname }}"
+        success_msg: "MinIO web console is accessible on {{ inventory_hostname }}"
+
+    - name: Check if MinIO API is accessible
+      uri:
+        url: "http://127.0.0.1:9000/minio/health/live"
+        status_code: 200
+      register: api_result
+      failed_when: false
+
+    - name: Assert API is accessible
+      assert:
+        that:
+          - "api_result.status == 200"
+        fail_msg: "MinIO API is not accessible on {{ inventory_hostname }}"
+        success_msg: "MinIO API is accessible on {{ inventory_hostname }}"
+
+    # Test cluster status - run on the first node only
+    - name: Install MinIO client for testing
+      get_url:
+        url: https://dl.min.io/client/mc/release/linux-amd64/mc
+        dest: /usr/local/bin/mc
+        mode: '0755'
+      when: inventory_hostname == groups['minio_servers'][0]
+
+    - name: Configure MinIO client
+      command: >
+        mc config host add myminio
+        http://127.0.0.1:9000
+        minioadmin minioadmin
+      args:
+        creates: /root/.mc/config.json
+      when: inventory_hostname == groups['minio_servers'][0]
+
+    - name: Check cluster status
+      command: mc admin info myminio
+      register: cluster_info
+      changed_when: false
+      when: inventory_hostname == groups['minio_servers'][0]
+
+    - name: Verify all nodes are in the cluster
+      assert:
+        that:
+          - "item in cluster_info.stdout"
+        fail_msg: "Node {{ item }} is not part of the cluster"
+        success_msg: "Node {{ item }} is part of the cluster"
+      loop: "{{ groups['minio_servers'] }}"
+      when: inventory_hostname == groups['minio_servers'][0] and cluster_info is defined

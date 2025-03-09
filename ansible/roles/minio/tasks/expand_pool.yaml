@@ -1,0 +1,177 @@
+---
+# expand_pool.yaml - MinIO Pool Expansion Tasks
+#
+# These tasks handle expanding MinIO storage by adding new server pools
+# or adding additional disks to existing servers.
+#
+# Variables:
+#   pool_name: Name for the new server pool (default: "new-pool")
+#   pool_port: Base port for the new server pool (default: 9020)
+#   pool_console_port: Console port for the new server pool (default: 9021)
+#   expand_disk_path: Path to the new disk/directory to add (default: "/mnt/disk3/blockchain_data")
+#   minio_alias: MinIO client alias for main instance (default: "main")
+#   minio_api_url: MinIO server API URL (default: "http://localhost:9000")
+#   minio_access_key: MinIO admin access key (default: "minioadmin")
+#   minio_secret_key: MinIO admin secret key (default: "minioadmin")
+
+# Set default values
+- name: Set default expansion values
+  set_fact:
+    pool_name: "{{ pool_name | default('new-pool') }}"
+    pool_port: "{{ pool_port | default(9020) }}"
+    pool_console_port: "{{ pool_console_port | default(9021) }}"
+    expand_disk_path: "{{ expand_disk_path | default('/mnt/disk3/blockchain_data') }}"
+    minio_alias: "{{ minio_alias | default('main') }}"
+    minio_api_url: "{{ minio_api_url | default('http://localhost:9000') }}"
+    minio_access_key: "{{ minio_access_key | default('minioadmin') }}"
+    minio_secret_key: "{{ minio_secret_key | default('minioadmin') }}"
+  tags: [expand]
+
+# Ensure data directory exists
+- name: Ensure blockchain data directory exists on new disk
+  file:
+    path: "{{ expand_disk_path }}"
+    state: directory
+    owner: "{{ minio_user | default('minio-user') }}"
+    group: "{{ minio_group | default('minio-group') }}"
+    mode: '0755'
+  tags: [expand]
+
+# Configure new server pool (if requested)
+- name: Create systemd service file for new MinIO pool
+  copy:
+    dest: "/etc/systemd/system/minio-{{ pool_name }}.service"
+    content: |
+      [Unit]
+      Description=MinIO Pool {{ pool_name }}
+      Documentation=https://docs.min.io
+      Wants=network-online.target
+      After=network-online.target
+
+      [Service]
+      User={{ minio_user | default('minio-user') }}
+      Group={{ minio_group | default('minio-group') }}
+      Environment="MINIO_ROOT_USER={{ minio_access_key }}"
+      Environment="MINIO_ROOT_PASSWORD={{ minio_secret_key }}"
+      ExecStart=/usr/local/bin/minio server --address :{{ pool_port }} --console-address :{{ pool_console_port }} {{ expand_disk_path }}
+      Restart=always
+      LimitNOFILE=65536
+      TasksMax=infinity
+      TimeoutStopSec=infinity
+      SendSIGKILL=no
+
+      [Install]
+      WantedBy=multi-user.target
+    mode: '0644'
+  when: create_new_pool | default(false) | bool
+  tags: [expand, pool]
+
+# Start and enable the new pool service
+- name: Start and enable new MinIO pool service
+  systemd:
+    name: "minio-{{ pool_name }}"
+    state: started
+    enabled: yes
+    daemon_reload: yes
+  when: create_new_pool | default(false) | bool
+  tags: [expand, pool]
+
+# Wait for the new service to start
+- name: Wait for new MinIO pool to start
+  wait_for:
+    port: "{{ pool_port }}"
+    timeout: 60
+  when: create_new_pool | default(false) | bool
+  tags: [expand, pool]
+
+# Configure MinIO client
+- name: Configure MinIO client
+  shell: |
+    mc alias set {{ minio_alias }} {{ minio_api_url }} {{ minio_access_key }} {{ minio_secret_key }}
+    {% if create_new_pool | default(false) | bool %}
+    mc alias set {{ pool_name }} http://localhost:{{ pool_port }} {{ minio_access_key }} {{ minio_secret_key }}
+    {% endif %}
+  register: mc_alias
+  changed_when: mc_alias.rc == 0
+  tags: [expand]
+
+# Get current MinIO status
+- name: Get current MinIO status
+  shell: |
+    mc admin info {{ minio_alias }}
+  register: minio_info
+  changed_when: false
+  tags: [expand]
+
+# Display current status
+- name: Display current MinIO status
+  debug:
+    var: minio_info.stdout_lines
+  tags: [expand]
+
+# Expand MinIO pools by adding a new server pool
+- name: Add new pool to MinIO cluster
+  shell: |
+    # Join the new pool to the existing cluster
+    mc admin cluster add {{ minio_alias }} http://localhost:{{ pool_port }}
+  register: add_pool
+  when: create_new_pool | default(false) | bool
+  failed_when: add_pool.rc != 0 and "already exists" not in add_pool.stderr
+  tags: [expand, pool]
+
+# Display pool addition results
+- name: Display pool addition results
+  debug:
+    var: add_pool.stdout_lines | default(add_pool.stderr_lines) | default(['No output from pool addition'])
+  when: create_new_pool | default(false) | bool
+  tags: [expand, pool]
+
+# Expand existing deployment by adding new disk to the same server
+- name: Add new disk to existing MinIO deployment
+  shell: |
+    # Stop the MinIO service
+    systemctl stop minio
+
+    # Update the MINIO_VOLUMES environment variable
+    if grep -q "^MINIO_VOLUMES=" /etc/default/minio; then
+      # Add the new volume to the existing list
+      sed -i "s#^MINIO_VOLUMES=.*#&,{{ expand_disk_path }}#" /etc/default/minio
+    else
+      # Create new MINIO_VOLUMES entry
+      echo "MINIO_VOLUMES=\"{{ expand_disk_path }}\"" >> /etc/default/minio
+    fi
+
+    # Start the MinIO service
+    systemctl start minio
+
+    # Wait for the service to start
+    sleep 10
+
+    # Verify the expanded storage pool
+    mc admin info {{ minio_alias }}
+  register: add_disk
+  when: not (create_new_pool | default(false) | bool) and expand_existing | default(false) | bool
+  tags: [expand, disk]
+
+# Display disk addition results
+- name: Display disk addition results
+  debug:
+    var: add_disk.stdout_lines | default(['No disk addition performed'])
+  when: not (create_new_pool | default(false) | bool) and expand_existing | default(false) | bool
+  tags: [expand, disk]
+
+# Verify expanded MinIO setup
+- name: Verify expanded MinIO setup
+  shell: |
+    mc admin info {{ minio_alias }}
+  register: expanded_info
+  changed_when: false
+  when: create_new_pool | default(false) | bool or expand_existing | default(false) | bool
+  tags: [expand, verification]
+
+# Display final expanded setup
+- name: Display expanded MinIO setup
+  debug:
+    var: expanded_info.stdout_lines | default(['No expansion performed'])
+  when: create_new_pool | default(false) | bool or expand_existing | default(false) | bool
+  tags: [expand, verification]

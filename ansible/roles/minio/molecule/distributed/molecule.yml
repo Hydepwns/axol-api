@@ -1,0 +1,62 @@
+---
+dependency:
+  name: galaxy
+driver:
+  name: docker
+platforms:
+  - name: minio1
+    image: "geerlingguy/docker-${MOLECULE_DISTRO:-ubuntu2204}-ansible:latest"
+    command: ""
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    privileged: true
+    pre_build_image: true
+    tmpfs:
+      - /tmp
+      - /run
+      - /run/lock
+    networks:
+      - name: minio-test-network
+    groups:
+      - minio_servers
+
+  - name: minio2
+    image: "geerlingguy/docker-${MOLECULE_DISTRO:-ubuntu2204}-ansible:latest"
+    command: ""
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    privileged: true
+    pre_build_image: true
+    tmpfs:
+      - /tmp
+      - /run
+      - /run/lock
+    networks:
+      - name: minio-test-network
+    groups:
+      - minio_servers
+
+provisioner:
+  name: ansible
+  inventory:
+    group_vars:
+      minio_servers:
+        minio_version: "20241218131544.0.0"
+        minio_user: "minio-user"
+        minio_group: "minio-group"
+        minio_server_port: 9000
+        minio_console_port: 9001
+        minio_bind_address: "0.0.0.0"
+        minio_cluster_mode: true
+        minio_server_count: 2
+        minio_root_user: "minioadmin"
+        minio_root_password: "minioadmin"
+        blockchain_data_type: "ethereum"
+  playbooks:
+    converge: converge.yml
+verifier:
+  name: ansible
+lint: |
+  set -e
+  yamllint .
+  ansible-lint

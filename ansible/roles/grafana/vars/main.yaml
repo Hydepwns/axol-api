@@ -1,6 +1,6 @@
 ---
-grafana_admin_user: "{{ grafana_admin_user }}"
-grafana_admin_password: "{{ grafana_admin_password }}"
-grafana_http_port: "{{ grafana_http_port }}"
-grafana_package: "{{ grafana_package }}"
-grafana_version: "{{ grafana_version }}"
+grafana_admin_user: "admin"
+grafana_admin_password: "admin"
+grafana_http_port: "3000"
+grafana_package: "grafana"
+grafana_version: "latest"

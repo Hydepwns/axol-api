@@ -1,0 +1,61 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  tasks:
+    - name: Check if MinIO service is running
+      command: systemctl status minio
+      register: minio_status
+      changed_when: false
+      failed_when: false
+
+    - name: Verify MinIO is running
+      assert:
+        that:
+          - "'active (running)' in minio_status.stdout"
+        fail_msg: "MinIO service is not running"
+        success_msg: "MinIO service is running"
+
+    - name: Check if MinIO web console is accessible
+      uri:
+        url: "http://127.0.0.1:9001"
+        status_code: 200
+      register: web_result
+      failed_when: false
+
+    - name: Assert web console is accessible
+      assert:
+        that:
+          - "web_result.status == 200"
+        fail_msg: "MinIO web console is not accessible"
+        success_msg: "MinIO web console is accessible"
+
+    - name: Check if MinIO API is accessible
+      uri:
+        url: "http://127.0.0.1:9000/minio/health/live"
+        status_code: 200
+      register: api_result
+      failed_when: false
+
+    - name: Assert API is accessible
+      assert:
+        that:
+          - "api_result.status == 200"
+        fail_msg: "MinIO API is not accessible"
+        success_msg: "MinIO API is accessible"
+
+    - name: Check if configuration files exist
+      stat:
+        path: "{{ item }}"
+      register: config_files
+      loop:
+        - /etc/default/minio
+        - /usr/lib/systemd/system/minio.service
+
+    - name: Assert configuration files exist
+      assert:
+        that:
+          - "item.stat.exists"
+        fail_msg: "Configuration file {{ item.item }} does not exist"
+        success_msg: "Configuration file {{ item.item }} exists"
+      loop: "{{ config_files.results }}"

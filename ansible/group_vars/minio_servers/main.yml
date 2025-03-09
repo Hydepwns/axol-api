@@ -1,0 +1,32 @@
+---
+# MinIO Configuration for all MinIO servers
+# Last updated: {{ ansible_date_time.date }}
+
+# MinIO version and user settings
+minio_version: "20241218131544.0.0"
+minio_user: "minio-user"
+minio_group: "minio-group"
+
+# Server configuration
+minio_server_port: 9000
+minio_console_port: 9001
+minio_bind_address: "0.0.0.0"  # Listen on all interfaces
+minio_opts: "--console-address {{ minio_bind_address }}:{{ minio_console_port }}"
+
+# Storage configuration
+minio_base_dir: "/mnt"
+minio_directories:
+  - "/mnt/minio"
+  - "{{ minio_data_dirs | default([]) }}"
+
+# Network configuration
+minio_external_access: true
+minio_domain: "{{ tailscale_domain }}"
+minio_enable_ssl: true
+minio_ssl_certificate: "/etc/minio/certs/public.crt"
+minio_ssl_key: "/etc/minio/certs/private.key"
+
+# Blockchain data settings
+blockchain_data_type: ["ethereum", "gnosis", "holesky", "base", "arbitrum", "optimism"]
+blockchain_data_retention: "365d"
+blockchain_data_backup_enabled: true

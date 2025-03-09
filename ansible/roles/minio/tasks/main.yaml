@@ -1,85 +1,164 @@
 ---
-- name: Update the package index
-  ansible.builtin.apt:
-    update_cache: true
+# MinIO role main task file
+#
+# This is the main entry point for the MinIO role, providing a comprehensive
+# set of tasks for deploying, configuring, and managing MinIO object storage.
+#
+# The role supports:
+# - Initial server installation and configuration
+# - Disk preparation and mounting
+# - Storage tier configuration for data lifecycle management
+# - MinIO client (mc) installation and configuration
+# - Service configuration and management
+# - ILM policy application
+# - Backup and restore operations
+# - Storage pool expansion
 
-- name: Upgrade all packages to the latest version
-  ansible.builtin.apt:
-    upgrade: dist
+# Import variables
+- name: Include role variables
+  include_vars: main.yml
+  tags: [always]
 
-- name: Install required packages
-  ansible.builtin.apt:
-    name:
-      - wget
-      - curl
-      - net-tools
-    state: present
+# Verify required variables
+- name: Verify required variables are defined
+  ansible.builtin.assert:
+    that:
+      - minio_server_datadirs is defined
+      - minio_server_datadirs | length > 0
+    fail_msg: "Required variables 'minio_server_datadirs' must be defined and have at least one data directory"
+  when: not ansible_check_mode
 
-- name: Ensure necessary ports are open
-  community.general.ufw:
-    rule: allow
-    port: "{{ item }}"
-    proto: tcp
-  loop:
-    - 9000
-    - 9001
+# Import tasks based on configuration
+- name: Setup disks for MinIO
+  import_tasks: disk_setup.yaml
+  when: minio_setup_disks | default(true)
+  tags: [setup, disks]
 
-- name: Check available disk space
-  ansible.builtin.command: "df --output=avail / | tail -n 1"
-  register: disk_space
+- name: Install MinIO server
+  import_tasks: install.yaml
+  when: minio_install | default(true)
+  tags: [install]
+
+- name: Configure MinIO service
+  import_tasks: service.yaml
+  when: minio_configure_service | default(true)
+  tags: [service]
+
+- name: Configure MinIO parameters
+  import_tasks: configure.yaml
+  when: minio_configure | default(true)
+  tags: [configure]
+
+- name: Setup MinIO client
+  import_tasks: client.yaml
+  when: minio_setup_client | default(true)
+  tags: [client]
+
+# Tier setup and management (optional components)
+- name: Setup and configure MinIO storage tiers
+  import_tasks: tier_setup.yaml
+  when: minio_setup_tier | default(false)
+  tags: [tier]
+
+- name: Apply ILM policies
+  import_tasks: ilm.yaml
+  when: minio_apply_ilm | default(false) and minio_setup_tier | default(false)
+  tags: [ilm]
+
+# New consolidated tasks
+- name: Backup or restore MinIO
+  import_tasks: backup_restore.yaml
+  when: minio_backup | default(false) or restore_backup is defined
+  tags: [backup, restore]
+
+- name: Expand MinIO storage
+  import_tasks: expand_pool.yaml
+  when: create_new_pool | default(false) or expand_existing | default(false)
+  tags: [expand]
+
+# Verify installation
+- name: Verify MinIO installation
+  ansible.builtin.command: systemctl status minio
+  register: minio_status
   changed_when: false
+  failed_when: false
+  tags: [verification]
 
-- name: Fail if disk space is less than 10GB
-  ansible.builtin.fail:
-    msg: "Not enough disk space. At least 10GB is required."
-  when: disk_space.stdout | int < 10485760
+- name: Display MinIO service status
+  debug:
+    var: minio_status.stdout_lines
+  when: minio_status.rc == 0
+  tags: [verification]
 
-- name: Ensure MinIO user and group exist
-  ansible.builtin.group:
-    name: "{{ minio_group }}"
-    state: present
+# Display setup summary
+- name: Display MinIO setup summary
+  debug:
+    msg: |
+      MinIO installation and configuration is complete!
 
-- name: Ensure MinIO user exists
-  ansible.builtin.user:
-    name: "{{ minio_user }}"
-    group: "{{ minio_group }}"
-    system: true
-    create_home: false
+      Server is available at: {{ minio_server_url | default('http://localhost:9000') }}
+      Console is available at: {{ minio_console_url | default('http://localhost:9001') }}
 
-- name: Download MinIO binary
-  ansible.builtin.get_url:
-    url: "https://dl.min.io/server/minio/release/linux-amd64/archive/minio_{{ minio_version }}_amd64.deb"
-    dest: "/tmp/minio.deb"
-    mode: '0644'
+      Configuration choices:
+      - Service configured: {{ minio_configure_service | default(true) }}
+      - Client installed: {{ minio_setup_client | default(true) }}
+      - Tiering enabled: {{ minio_setup_tier | default(false) }}
+      - ILM policies applied: {{ minio_apply_ilm | default(false) }}
 
-- name: Install MinIO
-  ansible.builtin.apt:
-    deb: "/tmp/minio.deb"
-    state: present
+      Data directories: {{ minio_data_dirs | default(['']) | join(', ') }}
 
-- name: Create MinIO directories
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: directory
-    owner: "{{ minio_user }}"
-    group: "{{ minio_group }}"
-    mode: '0755'
-  loop: "{{ minio_directories }}"
+      Use Ansible tags to run specific parts of this role:
+      - disk: Prepare and mount disks
+      - install: Install MinIO binaries
+      - service: Configure systemd service
+      - configure: Configure MinIO parameters
+      - client: Setup MinIO client (mc)
+      - tier: Configure storage tiers
+      - ilm: Apply Information Lifecycle Management policies
+      - backup: Backup MinIO configuration and data
+      - restore: Restore MinIO from a backup
+      - expand: Expand MinIO storage with additional disks or pools
+  tags: [always]
 
-- name: Deploy systemd service file
-  ansible.builtin.template:
-    src: minio.service.j2
-    dest: /usr/lib/systemd/system/minio.service
-    owner: root
-    group: root
-    mode: '0644'
+- name: Check for default credentials in production
+  ansible.builtin.assert:
+    that:
+      - (minio_root_user != "admin" or minio_root_password != "minioadmin") or (ansible_env.ANSIBLE_ENV | default('development') == 'development')
+    msg: "Default MinIO credentials detected in production environment. Please change these credentials in your vault file."
+  when: not ansible_check_mode
 
-- name: Reload systemd
-  ansible.builtin.systemd:
-    daemon_reload: true
+- name: Check for sufficient password strength
+  ansible.builtin.assert:
+    that:
+      - minio_root_password | length >= 8
+    msg: "MinIO root password is too short. Use at least 8 characters."
+  when: not ansible_check_mode
 
-- name: Enable and start MinIO service
-  ansible.builtin.systemd:
-    name: minio
-    enabled: true
-    state: started
+- name: Create blockchain data bucket
+  ansible.builtin.command: >
+    mc mb myminio/{{ item }}data
+  register: bucket_creation
+  retries: 3
+  delay: 5
+  until: bucket_creation is not failed
+  failed_when: bucket_creation.rc != 0 and "already own it" not in bucket_creation.stderr and "already exists" not in bucket_creation.stderr
+  when: (blockchain_data_type is defined and blockchain_data_type == item) or
+        (blockchain_data_types is defined and item in blockchain_data_types) or
+        (blockchain_data_type is not defined and blockchain_data_types is not defined)
+  loop:
+    - ethereum
+    - holesky
+    - ephemery
+    - optimism
+    - gnosis
+
+- name: Verify buckets were created
+  ansible.builtin.command: mc ls myminio
+  register: bucket_list
+  changed_when: false
+  failed_when: false
+
+- name: Display created buckets
+  ansible.builtin.debug:
+    msg: "Created buckets: {{ bucket_list.stdout_lines | join(', ') }}"
+  when: bucket_list.rc == 0

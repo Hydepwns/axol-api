@@ -1,0 +1,219 @@
+---
+# tier_setup.yaml - MinIO Tiering Configuration Tasks
+#
+# These tasks configure MinIO tiering, which allows automatic archiving of older data
+# to a secondary storage tier. This helps optimize storage costs while maintaining
+# access to all data.
+#
+# The process involves:
+# 1. Setting up a secondary MinIO instance for the archive tier
+# 2. Creating appropriate buckets on both instances
+# 3. Configuring the tier connection between instances
+# 4. Setting up ILM policies for automated data transition
+#
+# Variables:
+#   tier_name: Name of the tier in MinIO config (default: "ARCHIVE-TIER")
+#   tier_port: Port for the tier MinIO instance (default: 9010)
+#   tier_console_port: Console port for tier MinIO instance (default: 9011)
+#   transition_days: Days after which objects are moved to archive tier (default: 90)
+#   minio_buckets: List of buckets to configure (default: see below)
+#   minio_alias: MinIO client alias for main instance (default: "main")
+#   tier_alias: MinIO client alias for tier instance (default: "tier")
+#   minio_api_url: MinIO server API URL (default: "http://localhost:9000")
+#   minio_access_key: MinIO admin access key (default: "minioadmin")
+#   minio_secret_key: MinIO admin secret key (default: "minioadmin")
+
+# Default values if not provided
+- name: Set default values
+  set_fact:
+    tier_name: "{{ tier_name | default('ARCHIVE-TIER') }}"
+    tier_port: "{{ tier_port | default(9010) }}"
+    tier_console_port: "{{ tier_console_port | default(9011) }}"
+    transition_days: "{{ transition_days | default(90) }}"
+    minio_buckets: "{{ minio_buckets | default(['arbitrumdata', 'ethereumdata', 'holeskydata', 'optimismdata', 'ephemerydata', 'management']) }}"
+    minio_alias: "{{ minio_alias | default('main') }}"
+    tier_alias: "{{ tier_alias | default('tier') }}"
+    minio_api_url: "{{ minio_api_url | default('http://localhost:9000') }}"
+    minio_tier_url: "{{ minio_tier_url | default('http://localhost:' + tier_port | string) }}"
+    minio_access_key: "{{ minio_access_key | default('minioadmin') }}"
+    minio_secret_key: "{{ minio_secret_key | default('minioadmin') }}"
+
+# Setup phase 1: Prepare the archive tier infrastructure
+- name: Ensure archive tier data directory exists
+  file:
+    path: /mnt/disk3/blockchain_data
+    state: directory
+    owner: minio-user
+    group: minio-group
+    mode: '0755'
+  tags: [setup]
+
+- name: Create systemd service file for MinIO tier
+  copy:
+    dest: /etc/systemd/system/minio-tier.service
+    content: |
+      [Unit]
+      Description=MinIO Tier Storage
+      Documentation=https://docs.min.io
+      Wants=network-online.target
+      After=network-online.target
+
+      [Service]
+      User=minio-user
+      Group=minio-group
+      Environment="MINIO_ROOT_USER={{ minio_access_key }}"
+      Environment="MINIO_ROOT_PASSWORD={{ minio_secret_key }}"
+      ExecStart=/usr/local/bin/minio server --address :{{ tier_port }} --console-address :{{ tier_console_port }} /mnt/disk3/blockchain_data
+      Restart=always
+      LimitNOFILE=65536
+      TasksMax=infinity
+      TimeoutStopSec=infinity
+      SendSIGKILL=no
+
+      [Install]
+      WantedBy=multi-user.target
+    mode: '0644'
+  tags: [setup]
+
+- name: Start and enable MinIO tier service
+  systemd:
+    name: minio-tier
+    state: started
+    enabled: yes
+    daemon_reload: yes
+  tags: [setup]
+
+- name: Wait for MinIO tier to start
+  wait_for:
+    port: "{{ tier_port }}"
+    timeout: 60
+  tags: [setup]
+
+# Setup phase 2: Configure MinIO clients and buckets
+- name: Configure MinIO client aliases
+  shell: |
+    mc alias set {{ minio_alias }} {{ minio_api_url }} {{ minio_access_key }} {{ minio_secret_key }}
+    mc alias set {{ tier_alias }} {{ minio_tier_url }} {{ minio_access_key }} {{ minio_secret_key }}
+  register: mc_alias
+  changed_when: mc_alias.rc == 0
+  tags: [setup, config]
+
+- name: Create necessary buckets in the main MinIO instance
+  shell: |
+    mc mb {{ minio_alias }}/{{ item }} --ignore-existing
+  loop: "{{ minio_buckets }}"
+  register: main_buckets
+  changed_when: main_buckets.rc == 0
+  tags: [setup, config]
+
+- name: Create corresponding buckets in the tier MinIO instance
+  shell: |
+    mc mb {{ tier_alias }}/{{ item }}-archive --ignore-existing
+  loop: "{{ minio_buckets }}"
+  register: tier_buckets
+  changed_when: tier_buckets.rc == 0
+  tags: [setup, config]
+
+# Setup phase 3: Configure tier linkage
+- name: Create temporary tier configuration file
+  copy:
+    dest: /tmp/tier-config.json
+    content: |
+      {
+        "type": "minio",
+        "name": "{{ tier_name }}",
+        "endpoint": "{{ minio_tier_url }}",
+        "credentials": {
+          "accessKey": "{{ minio_access_key }}",
+          "secretKey": "{{ minio_secret_key }}"
+        },
+        "bucket-map": {
+          {% for bucket in minio_buckets %}
+          "{{ bucket }}": "{{ bucket }}-archive"{% if not loop.last %},{% endif %}
+          {% endfor %}
+        }
+      }
+    mode: '0644'
+  register: tier_config_file
+  tags: [config]
+
+- name: Add tier to main MinIO instance
+  shell: |
+    mc admin tier add {{ minio_alias }} {{ tier_name }} /tmp/tier-config.json
+  register: add_tier
+  failed_when: add_tier.rc != 0 and "already exists" not in add_tier.stderr
+  changed_when: add_tier.rc == 0
+  tags: [config]
+
+- name: Verify tier configuration
+  shell: |
+    mc admin tier ls {{ minio_alias }}
+  register: tier_list
+  changed_when: false
+  tags: [config, verification]
+
+# Setup phase 4: Configure ILM policies
+- name: Apply ILM policies to buckets
+  shell: |
+    # Apply the policy with direct command line arguments
+    mc ilm add {{ minio_alias }}/{{ item }} --transition-days {{ transition_days }} --transition-tier {{ tier_name }}
+
+    # Verify the policy was applied
+    echo "ILM policy applied to {{ minio_alias }}/{{ item }}:"
+    mc ilm ls {{ minio_alias }}/{{ item }}
+  loop: "{{ minio_buckets }}"
+  register: ilm_apply
+  changed_when: ilm_apply.rc == 0
+  ignore_errors: true
+  tags: [config, ilm]
+
+# Display information and verification
+- name: Display final tiering setup information
+  debug:
+    msg: |
+      MinIO tiering has been fully configured!
+
+      Main MinIO: {{ minio_api_url }} (Web UI: {{ minio_api_url | replace('9000', '9001') }})
+      Tier MinIO: {{ minio_tier_url }} (Web UI: {{ minio_tier_url | replace(tier_port | string, tier_console_port | string) }})
+
+      The following buckets have ILM policies to move data older than {{ transition_days }} days to the archive tier:
+      {% for bucket in minio_buckets %}
+      - {{ bucket }} → {{ bucket }}-archive
+      {% endfor %}
+
+      You can view the tier configuration in the MinIO console:
+      1. Log in to the main MinIO console at {{ minio_api_url | replace('9000', '9001') }}
+      2. Go to Administrator -> Tiers to verify the tier setup
+      3. Go to Buckets -> [bucket-name] -> Management -> Lifecycle to verify ILM policies
+
+      Note: Data will be automatically moved to the archive tier after {{ transition_days }} days.
+      For immediate testing, you can modify the policy to use a shorter period
+      or manually transition objects using the MinIO console.
+  tags: [config, verification]
+
+# Optional: Test the tier configuration with a test file
+- name: Test object lifecycle management
+  shell: |
+    # Create test file
+    echo "Test file for tiering demonstration" > /tmp/test-tier-file.txt
+
+    # Upload to main MinIO
+    mc cp /tmp/test-tier-file.txt {{ minio_alias }}/{{ minio_buckets[0] }}/test-tier-file.txt
+
+    # List object
+    echo "Object in main bucket:"
+    mc ls {{ minio_alias }}/{{ minio_buckets[0] }}/test-tier-file.txt
+
+    # Clean up
+    rm /tmp/test-tier-file.txt
+  register: test_result
+  changed_when: false
+  ignore_errors: true
+  when: run_tier_test | default(false) | bool
+  tags: [verification, test]
+
+- name: Clean up temporary files
+  file:
+    path: "/tmp/tier-config.json"
+    state: absent
+  tags: [cleanup]

@@ -1,0 +1,127 @@
+---
+- name: Backup MinIO Data and Configuration
+  hosts: minio_servers
+  become: true
+  gather_facts: true
+  tags: ['backup', 'minio']
+
+  vars:
+    backup_timestamp: "{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}"
+    backup_dir: "/tmp/minio_backup_{{ backup_timestamp }}"
+    backup_file: "/tmp/minio_backup_{{ backup_timestamp }}.tar.gz"
+    remote_backup_location: "{{ remote_backup_location | default('/mnt/backups') }}"
+
+  tasks:
+    - name: Create backup directory
+      ansible.builtin.file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Backup MinIO configuration files
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "{{ backup_dir }}/"
+        remote_src: true
+      loop:
+        - /etc/default/minio
+        - /usr/lib/systemd/system/minio.service
+      ignore_errors: true
+
+    - name: Get MinIO client config
+      ansible.builtin.copy:
+        src: /root/.mc/config.json
+        dest: "{{ backup_dir }}/mc_config.json"
+        remote_src: true
+      ignore_errors: true
+
+    - name: Compress backup files
+      ansible.builtin.archive:
+        path: "{{ backup_dir }}"
+        dest: "{{ backup_file }}"
+        format: gz
+
+    - name: Ensure remote backup location exists
+      ansible.builtin.file:
+        path: "{{ remote_backup_location }}"
+        state: directory
+        mode: '0755'
+      when: remote_backup_location is defined
+
+    - name: Copy backup to remote location if specified
+      ansible.builtin.copy:
+        src: "{{ backup_file }}"
+        dest: "{{ remote_backup_location }}/minio_backup_{{ backup_timestamp }}.tar.gz"
+        remote_src: true
+      when: remote_backup_location is defined
+
+    - name: Cleanup local backup files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ backup_dir }}"
+        - "{{ backup_file }}"
+      when: cleanup_local_backup | default(true)
+
+- name: Restore MinIO Configuration
+  hosts: minio_servers
+  become: true
+  gather_facts: true
+  tags: ['restore', 'minio']
+
+  vars:
+    restore_file: "{{ restore_file | mandatory }}"
+    temp_restore_dir: "/tmp/minio_restore"
+
+  tasks:
+    - name: Ensure temp restore directory exists
+      ansible.builtin.file:
+        path: "{{ temp_restore_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Extract backup archive
+      ansible.builtin.unarchive:
+        src: "{{ restore_file }}"
+        dest: "{{ temp_restore_dir }}"
+        remote_src: "{{ remote_restore | default(true) }}"
+
+    - name: Stop MinIO service
+      ansible.builtin.systemd:
+        name: minio
+        state: stopped
+
+    - name: Restore MinIO configuration files
+      ansible.builtin.copy:
+        src: "{{ temp_restore_dir }}/{{ item.src }}"
+        dest: "{{ item.dest }}"
+        remote_src: true
+        mode: "{{ item.mode }}"
+      loop:
+        - { src: 'etc/default/minio', dest: '/etc/default/minio', mode: '0644' }
+        - { src: 'usr/lib/systemd/system/minio.service', dest: '/usr/lib/systemd/system/minio.service', mode: '0644' }
+      ignore_errors: true
+
+    - name: Restore MinIO client config if it exists
+      ansible.builtin.copy:
+        src: "{{ temp_restore_dir }}/mc_config.json"
+        dest: "/root/.mc/config.json"
+        remote_src: true
+        mode: '0600'
+      ignore_errors: true
+
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Start MinIO service
+      ansible.builtin.systemd:
+        name: minio
+        state: started
+
+    - name: Cleanup temp restore directory
+      ansible.builtin.file:
+        path: "{{ temp_restore_dir }}"
+        state: absent
+      when: cleanup_temp | default(true)

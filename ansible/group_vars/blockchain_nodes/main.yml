@@ -1,0 +1,19 @@
+---
+# Blockchain nodes specific configuration
+# Last updated: {{ ansible_date_time.date }}
+
+# Node configuration
+blockchain_node_type: "ethereum"  # Default node type
+blockchain_sync_mode: "snap"      # snap, full, or archive
+blockchain_rpc_enabled: true
+blockchain_rpc_port: 8545
+blockchain_ws_port: 8546
+
+# Resource limits
+blockchain_node_cpu_limit: "4"
+blockchain_node_memory_limit: "16G"
+blockchain_node_disk_quota: "1000G"
+
+# Networking
+blockchain_p2p_port: 30303
+blockchain_allow_external_p2p: true

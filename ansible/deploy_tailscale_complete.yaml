@@ -1,0 +1,91 @@
+---
+# deploy_tailscale_complete.yaml - Complete Tailscale deployment playbook
+#
+# This playbook provides a complete Tailscale deployment including:
+# - Installation and basic configuration
+# - ACL configuration
+# - Tag management
+#
+# Usage examples:
+#   # Full deployment:
+#   ansible-playbook -i inventory.ini deploy_tailscale_complete.yaml
+#
+#   # Only apply tags:
+#   ansible-playbook -i inventory.ini deploy_tailscale_complete.yaml --tags apply_tags
+
+- name: Deploy Tailscale with complete configuration
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    # Path to ACL file for Tailscale
+    tailscale_acl_file: "{{ playbook_dir }}/../tailscale-acl.json"
+    # Whether to apply tags to existing Tailscale nodes
+    tailscale_apply_tags: true
+    # Default tags for all servers
+    tailscale_default_tags: "tag:server"
+    # Role-specific tags
+    tailscale_role_tags:
+      minio: "tag:minio"
+      grafana: "tag:monitoring"
+      prometheus: "tag:monitoring"
+
+  pre_tasks:
+    - name: Copy ACL file to role files directory
+      ansible.builtin.copy:
+        src: "{{ tailscale_acl_file }}"
+        dest: "{{ playbook_dir }}/roles/tailscale/files/tailscale-acl.json"
+        mode: '0644'
+      delegate_to: localhost
+      become: false
+      run_once: true
+      when: tailscale_acl_file is defined and lookup('ansible.builtin.stat', tailscale_acl_file).exists
+
+    - name: Ensure system is up to date
+      ansible.builtin.apt:
+        update_cache: true
+        upgrade: dist
+      when: ansible_os_family == "Debian"
+
+    - name: Ensure system is up to date (RedHat)
+      ansible.builtin.yum:
+        name: '*'
+        state: latest
+      when: ansible_os_family == "RedHat"
+
+    # Determine tags based on host groups
+    - name: Set base tags
+      ansible.builtin.set_fact:
+        host_tailscale_tags: "{{ tailscale_default_tags }}"
+
+    - name: Add minio tag if applicable
+      ansible.builtin.set_fact:
+        host_tailscale_tags: "{{ host_tailscale_tags }},{{ tailscale_role_tags.minio }}"
+      when: inventory_hostname in groups['minio_servers'] | default([])
+
+    - name: Add monitoring tag if applicable
+      ansible.builtin.set_fact:
+        host_tailscale_tags: "{{ host_tailscale_tags }},{{ tailscale_role_tags.grafana }}"
+      when: inventory_hostname in groups['grafana_targets'] | default([])
+
+  roles:
+    - role: tailscale
+      tailscale_auth_key: "{{ tailscale_auth_key | default(omit) }}"
+      tailscale_hostname: "{{ inventory_hostname }}"
+      tailscale_advertise_tags: "{{ host_tailscale_tags }}"
+
+  post_tasks:
+    - name: Apply Tailscale tags to existing installations
+      ansible.builtin.shell: "tailscale up --reset --advertise-tags={{ host_tailscale_tags }}"
+      when: tailscale_apply_tags | default(true)
+      tags: [apply_tags]
+
+    - name: Verify Tailscale status
+      ansible.builtin.command: tailscale status
+      register: tailscale_status
+      changed_when: false
+
+    - name: Display Tailscale status
+      ansible.builtin.debug:
+        var: tailscale_status.stdout_lines

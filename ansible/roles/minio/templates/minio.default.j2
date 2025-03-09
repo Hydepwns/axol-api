@@ -1,0 +1,22 @@
+# Set the hosts and volumes for the MinIO server
+MINIO_VOLUMES="{{ minio_directories | flatten | join(' ') }}"
+
+# Set MinIO server options
+MINIO_OPTS="--address {{ minio_bind_address }}:{{ minio_server_port }} {{ minio_opts }}"
+
+# Set MinIO server environment variables
+MINIO_BROWSER="on"
+MINIO_PROMETHEUS_AUTH_TYPE="public"
+MINIO_DOMAIN="{{ minio_domain | default('localhost') }}"
+
+# Blockchain data specific settings
+MINIO_STORAGE_CLASS_STANDARD="EC:{{ minio_server_count | default(1) }}:{{ (minio_server_count | default(1)) - 1 }}"
+# Blockchain data types
+{% if blockchain_data_types is defined %}
+MINIO_BUCKET_BLOCKCHAIN="{{ blockchain_data_types | join(',') }}_data"
+{% elif blockchain_data_type is defined %}
+MINIO_BUCKET_BLOCKCHAIN="{{ blockchain_data_type }}_data"
+{% endif %}
+
+# System resource limits
+MINIO_ULIMIT_N="65536"

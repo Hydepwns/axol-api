@@ -1,0 +1,28 @@
+---
+- name: Enable and start MinIO service
+  ansible.builtin.systemd:
+    name: minio
+    enabled: true
+    state: started
+
+- name: Wait for MinIO service to be fully started
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ minio_server_port }}"
+    state: started
+    timeout: 30
+
+- name: Verify overall MinIO service health
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ minio_server_port }}/minio/health/live"
+    status_code: 200
+    timeout: 10
+  register: minio_final_health_check
+  retries: 3
+  delay: 5
+  until: minio_final_health_check is success
+  failed_when: false
+
+- name: Display MinIO health status
+  ansible.builtin.debug:
+    msg: "MinIO service is {% if minio_final_health_check is success %}healthy{% else %}experiencing issues{% endif %}"

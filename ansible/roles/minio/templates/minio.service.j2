@@ -10,8 +10,29 @@ WorkingDirectory=/usr/local
 User={{ minio_user }}
 Group={{ minio_group }}
 EnvironmentFile=/etc/default/minio
+Environment="MINIO_ROOT_USER={{ minio_root_user }}"
+Environment="MINIO_ROOT_PASSWORD={{ minio_root_password }}"
+{% if minio_access_key is defined %}
+Environment="MINIO_ACCESS_KEY={{ minio_access_key }}"
+{% endif %}
+{% if minio_secret_key is defined %}
+Environment="MINIO_SECRET_KEY={{ minio_secret_key }}"
+{% endif %}
+{% if minio_enable_ssl | default(false) and minio_ssl_certificate is defined and minio_ssl_key is defined %}
+Environment="MINIO_CERT_FILE={{ minio_ssl_certificate }}"
+Environment="MINIO_KEY_FILE={{ minio_ssl_key }}"
+{% endif %}
+{% if minio_cluster_mode | default(false) %}
+{% if minio_server_urls is defined and minio_server_urls|length > 0 %}
+ExecStart=/usr/local/bin/minio server $MINIO_OPTS {{ minio_server_urls }}
+{% else %}
+# Fallback when minio_server_urls is not defined
+ExecStart=/usr/local/bin/minio server $MINIO_OPTS $MINIO_VOLUMES
+{% endif %}
+{% else %}
 ExecStartPre=/bin/bash -c "if [ -z \"${MINIO_VOLUMES}\" ]; then echo \"Variable MINIO_VOLUMES not set in /etc/default/minio\"; exit 1; fi"
 ExecStart=/usr/local/bin/minio server $MINIO_OPTS $MINIO_VOLUMES
+{% endif %}
 Restart=always
 LimitNOFILE=65536
 TasksMax=infinity

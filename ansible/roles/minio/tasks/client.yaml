@@ -1,0 +1,149 @@
+---
+- name: Check if mc (MinIO client) is already installed
+  ansible.builtin.command: mc --version
+  register: mc_installed
+  changed_when: false
+  failed_when: false
+  check_mode: no
+
+- name: Get latest MinIO client version
+  ansible.builtin.uri:
+    url: https://dl.min.io/client/mc/release/linux-amd64/mc.latest.version
+    return_content: yes
+  register: mc_latest_version
+  failed_when: false
+  when: (mc_installed.rc != 0 or 'upgrade' in mc_installed.stdout) and not ansible_check_mode
+
+- name: Install mc (MinIO client) for administration
+  ansible.builtin.get_url:
+    url: https://dl.min.io/client/mc/release/linux-amd64/mc
+    dest: /usr/local/bin/mc
+    mode: '0755'
+  register: mc_download
+  retries: 3
+  delay: 5
+  until: mc_download is not failed
+  when: (mc_installed.rc != 0 or 'upgrade' in mc_installed.stdout) and not ansible_check_mode
+
+- name: Ensure mc is executable
+  ansible.builtin.file:
+    path: /usr/local/bin/mc
+    mode: '0755'
+    state: file
+  when: not ansible_check_mode or mc_installed.rc == 0
+
+- name: Remove existing MinIO client configuration
+  ansible.builtin.file:
+    path: /root/.mc/config.json
+    state: absent
+  when: not ansible_check_mode
+
+- name: Wait for MinIO server to be fully initialized
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ minio_server_port }}"
+    timeout: 60
+    delay: 10
+  when: not ansible_check_mode
+
+- name: Configure mc
+  ansible.builtin.command: >
+    mc config host add myminio
+    http://127.0.0.1:{{ minio_server_port }}
+    minioadmin minioadmin
+  register: mc_config
+  retries: 5
+  delay: 15
+  until: mc_config is not failed
+  failed_when: mc_config.rc != 0 and "already exists" not in mc_config.stderr
+  when: not ansible_check_mode
+
+- name: Verify mc configuration
+  ansible.builtin.command: mc admin info myminio
+  register: mc_verify
+  retries: 3
+  delay: 5
+  until: mc_verify is not failed
+  changed_when: false
+  failed_when: mc_verify.rc != 0 and "ERROR" in mc_verify.stderr
+  when: not ansible_check_mode
+
+# Clean up old bucket flags if recreate_buckets is true
+- name: Clean up old bucket flags if recreating buckets
+  ansible.builtin.file:
+    path: "/tmp/bucket_{{ item }}_created"
+    state: absent
+  with_items: "{{ blockchain_data_types | default([blockchain_data_type]) | list }}"
+  when: (blockchain_data_type is defined or blockchain_data_types is defined) and (recreate_buckets | default(false)) and not ansible_check_mode
+
+# List existing buckets to avoid recreation
+- name: List existing buckets
+  ansible.builtin.command: mc ls myminio
+  register: existing_buckets
+  changed_when: false
+  failed_when: false
+  check_mode: no
+  when: not ansible_check_mode
+
+- name: Create blockchain data bucket
+  ansible.builtin.command: >
+    mc mb myminio/{{ item }}data
+  args:
+    creates: "/tmp/bucket_{{ item }}_created"
+  register: bucket_created
+  with_items: "{{ blockchain_data_types | default([blockchain_data_type]) | list }}"
+  when: >
+    (blockchain_data_type is defined or blockchain_data_types is defined) and
+    ((recreate_buckets | default(false)) or
+     (item ~ 'data' not in existing_buckets.stdout | default(''))) and
+    not ansible_check_mode
+  failed_when: bucket_created.rc != 0 and "already exists" not in bucket_created.stderr
+  retries: 3
+  delay: 5
+  until: bucket_created is not failed
+
+- name: Flag buckets as created
+  ansible.builtin.file:
+    path: "/tmp/bucket_{{ item }}_created"
+    state: touch
+  with_items: "{{ blockchain_data_types | default([blockchain_data_type]) | list }}"
+  when: (blockchain_data_type is defined or blockchain_data_types is defined) and bucket_created.changed | default(false) and not ansible_check_mode
+
+# Additional bucket configuration
+- name: Set bucket retention to ensure data persistence
+  ansible.builtin.command: >
+    mc retention set --default GOVERNANCE "90d" myminio/{{ item }}data
+  register: bucket_retention
+  with_items: "{{ blockchain_data_types | default([blockchain_data_type]) | list }}"
+  when: false  # Disabled because object locking is not enabled on the buckets
+  changed_when: true
+  failed_when: bucket_retention.rc != 0 and "Object retention is already enabled" not in bucket_retention.stderr
+
+# Set up versioning for blockchain data buckets
+- name: Enable bucket versioning
+  ansible.builtin.command: >
+    mc version enable myminio/{{ item }}data
+  register: bucket_versioning
+  with_items: "{{ blockchain_data_types | default([blockchain_data_type]) | list }}"
+  when: (blockchain_data_type is defined or blockchain_data_types is defined) and not ansible_check_mode
+  changed_when: true
+  failed_when: bucket_versioning.rc != 0 and "Versioning configuration already enabled" not in bucket_versioning.stderr
+
+# Create bucket for status tracking
+- name: Create management bucket for status tracking
+  ansible.builtin.command: >
+    mc mb myminio/management
+  args:
+    creates: "/tmp/bucket_management_created"
+  register: mgmt_bucket_created
+  failed_when: mgmt_bucket_created.rc != 0 and "already exists" not in mgmt_bucket_created.stderr
+  retries: 3
+  delay: 5
+  until: mgmt_bucket_created is not failed
+  when: not ansible_check_mode
+
+- name: Flag management bucket as created
+  ansible.builtin.file:
+    path: "/tmp/bucket_management_created"
+    state: touch
+  when: mgmt_bucket_created.changed | default(false) and not ansible_check_mode

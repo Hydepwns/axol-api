@@ -1,0 +1,81 @@
+---
+- name: Update the package index
+  ansible.builtin.apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Upgrade all packages to the latest version
+  ansible.builtin.apt:
+    upgrade: dist
+
+- name: Install required packages
+  ansible.builtin.apt:
+    name:
+      - wget
+      - curl
+      - net-tools
+    state: present
+
+- name: Check if ufw is installed
+  ansible.builtin.command: which ufw
+  register: ufw_check
+  changed_when: false
+  failed_when: false
+
+- name: Install ufw if not present
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+  when: ufw_check.rc != 0
+
+- name: Ensure necessary ports are open
+  community.general.ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop:
+    - "{{ minio_server_port | default('9000') }}"
+    - "{{ minio_console_port | default('9001') }}"
+  when: ufw_check.rc == 0
+
+- name: Check available disk space
+  ansible.builtin.shell: df --output=avail / | tail -1
+  register: available_space
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Fail if disk space is less than minimum requirement
+  ansible.builtin.fail:
+    msg: "Not enough disk space. At least {{ minio_min_disk_space_gb | default(10) }}GB is required."
+  when: not ansible_check_mode and (available_space.stdout | int) < ((minio_min_disk_space_gb | default(10)) * 1024)
+
+- name: Ensure MinIO user and group exist
+  ansible.builtin.group:
+    name: "{{ minio_group }}"
+    state: present
+
+- name: Ensure MinIO user exists
+  ansible.builtin.user:
+    name: "{{ minio_user }}"
+    group: "{{ minio_group }}"
+    system: true
+    create_home: false
+
+- name: Download MinIO binary
+  ansible.builtin.get_url:
+    url: "https://dl.min.io/server/minio/release/linux-amd64/archive/minio_{{ minio_version }}_amd64.deb"
+    dest: "/tmp/minio.deb"
+    mode: '0644'
+  register: minio_download
+
+- name: Check if MinIO is already installed
+  ansible.builtin.command: dpkg-query -W -f='${Version}' minio
+  register: minio_installed_version
+  changed_when: false
+  failed_when: false
+
+- name: Install MinIO
+  ansible.builtin.apt:
+    deb: "/tmp/minio.deb"
+    state: present
+  when: minio_installed_version.rc != 0 or minio_installed_version.stdout != minio_version

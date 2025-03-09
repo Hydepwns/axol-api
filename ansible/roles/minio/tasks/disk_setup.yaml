@@ -1,0 +1,134 @@
+---
+# disk_setup.yaml - MinIO Disk Preparation and Mounting Tasks
+#
+# These tasks handle disk preparation for MinIO, including:
+# 1. Partitioning new disks
+# 2. Formatting disks with appropriate filesystems
+# 3. Mounting disks to the correct locations
+# 4. Setting proper permissions for MinIO usage
+#
+# Variables:
+#   disk_devices: List of disk devices to prepare (default: ["/dev/sda", "/dev/sdb"])
+#   mount_points: List of mount points corresponding to disk_devices (default: ["/mnt/disk1", "/mnt/disk2"])
+#   minio_user: User for MinIO service (default: "minio-user")
+#   minio_group: Group for MinIO service (default: "minio-group")
+#   data_dir_name: Name of the data directory on each disk (default: "blockchain_data")
+#   additional_disk: Optional additional disk to prepare (default: not specified)
+#   additional_mount: Mount point for the additional disk (default: "/mnt/disk3")
+
+# Set default values
+- name: Set default values for disk setup
+  set_fact:
+    disk_devices: "{{ disk_devices | default(['/dev/sda', '/dev/sdb']) }}"
+    mount_points: "{{ mount_points | default(['/mnt/disk1', '/mnt/disk2']) }}"
+    minio_user: "{{ minio_user | default('minio-user') }}"
+    minio_group: "{{ minio_group | default('minio-group') }}"
+    data_dir_name: "{{ data_dir_name | default('blockchain_data') }}"
+    additional_mount: "{{ additional_mount | default('/mnt/disk3') }}"
+  tags: [always]
+
+# Format and mount main disks
+- name: Format main disks with ext4
+  command: "mkfs.ext4 {{ item }}"
+  args:
+    creates: "{{ mount_points[disk_devices.index(item)] }}/lost+found"
+  loop: "{{ disk_devices }}"
+  register: format_disks
+  ignore_errors: true
+  tags: [disk_setup]
+
+- name: Create mount points for main disks
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop: "{{ mount_points }}"
+  tags: [disk_setup]
+
+- name: Mount main disks
+  mount:
+    path: "{{ mount_points[disk_devices.index(item)] }}"
+    src: "{{ item }}"
+    fstype: ext4
+    state: mounted
+  loop: "{{ disk_devices }}"
+  tags: [disk_setup]
+
+- name: Create data directories on main disks
+  file:
+    path: "{{ item }}/{{ data_dir_name }}"
+    state: directory
+    owner: "{{ minio_user }}"
+    group: "{{ minio_group }}"
+    mode: '0755'
+  loop: "{{ mount_points }}"
+  tags: [disk_setup]
+
+# Prepare additional disk (if specified)
+- name: Create partition on additional disk
+  shell: |
+    echo -e "o\nn\np\n1\n\n\nw" | fdisk {{ additional_disk }}
+  args:
+    executable: /bin/bash
+  register: fdisk_result
+  failed_when: fdisk_result.rc != 0 and "Device or resource busy" not in fdisk_result.stderr
+  changed_when: fdisk_result.rc == 0
+  when: additional_disk is defined
+  tags: [additional_disk]
+
+- name: Wait for the additional device partition to be available
+  wait_for:
+    path: "{{ additional_disk }}p1"
+    timeout: 10
+  ignore_errors: true
+  when: additional_disk is defined
+  tags: [additional_disk]
+
+- name: Format the additional partition with ext4
+  filesystem:
+    fstype: ext4
+    dev: "{{ additional_disk }}p1"
+  register: format_result
+  failed_when: format_result is failed and "already contains a ext4 filesystem" not in format_result.msg
+  when: additional_disk is defined
+  tags: [additional_disk]
+
+- name: Create additional mount directory
+  file:
+    path: "{{ additional_mount }}"
+    state: directory
+    mode: '0755'
+  when: additional_disk is defined
+  tags: [additional_disk]
+
+- name: Mount the additional partition
+  mount:
+    path: "{{ additional_mount }}"
+    src: "{{ additional_disk }}p1"
+    fstype: ext4
+    state: mounted
+  when: additional_disk is defined
+  tags: [additional_disk]
+
+- name: Create data directory on additional disk
+  file:
+    path: "{{ additional_mount }}/{{ data_dir_name }}"
+    state: directory
+    owner: "{{ minio_user }}"
+    group: "{{ minio_group }}"
+    mode: '0755'
+  when: additional_disk is defined
+  tags: [additional_disk]
+
+# Update MinIO configuration
+- name: Update minio_data_dirs variable to include all disks
+  set_fact:
+    minio_data_dirs: "{{ mount_points | map('regex_replace', '$', '/' + data_dir_name) | list +
+                        ([additional_mount + '/' + data_dir_name] if additional_disk is defined else []) }}"
+  tags: [config]
+
+- name: Display configured data directories
+  debug:
+    var: minio_data_dirs
+    verbosity: 1
+  tags: [config]

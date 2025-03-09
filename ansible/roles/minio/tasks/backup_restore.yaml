@@ -1,0 +1,184 @@
+---
+# backup_restore.yaml - MinIO Backup and Restore Tasks
+#
+# These tasks manage backup and restoration of MinIO configuration and data.
+# They can be used to create backups before upgrades or to migrate to new servers.
+#
+# Variables:
+#   backup_timestamp: Timestamp for the backup (default: current time)
+#   backup_dir: Temporary directory for the backup (default: /tmp/minio_backup_<timestamp>)
+#   backup_file: Archive file for the backup (default: /tmp/minio_backup_<timestamp>.tar.gz)
+#   remote_backup_location: Where to store backups (default: /mnt/backups)
+#   minio_data_dirs: List of MinIO data directories to backup (default: from role)
+#   backup_config_only: Whether to backup only configuration files (default: false)
+#   restore_backup: Path to backup file to restore (default: not defined)
+
+# Set default values for backup
+- name: Set default backup values
+  set_fact:
+    backup_timestamp: "{{ backup_timestamp | default(lookup('pipe', 'date +%Y%m%d-%H%M%S')) }}"
+    backup_dir: "{{ backup_dir | default('/tmp/minio_backup_' + (backup_timestamp | default(lookup('pipe', 'date +%Y%m%d-%H%M%S')))) }}"
+    backup_file: "{{ backup_file | default('/tmp/minio_backup_' + (backup_timestamp | default(lookup('pipe', 'date +%Y%m%d-%H%M%S'))) + '.tar.gz') }}"
+    remote_backup_location: "{{ remote_backup_location | default('/mnt/backups') }}"
+    backup_config_only: "{{ backup_config_only | default(false) | bool }}"
+  tags: [backup]
+
+# Ensure backup directory exists
+- name: Create backup directory
+  file:
+    path: "{{ backup_dir }}"
+    state: directory
+    mode: '0755'
+  tags: [backup]
+
+# Backup MinIO configuration files
+- name: Backup MinIO configuration files
+  copy:
+    src: "{{ item }}"
+    dest: "{{ backup_dir }}/"
+    remote_src: true
+  loop:
+    - /etc/default/minio
+    - /etc/systemd/system/minio.service
+    - /usr/lib/systemd/system/minio.service
+    - /etc/systemd/system/minio-tier.service
+  ignore_errors: true
+  tags: [backup]
+
+# Backup MinIO client configuration
+- name: Backup MinIO client configuration
+  copy:
+    src: "{{ ansible_env.HOME }}/.mc/config.json"
+    dest: "{{ backup_dir }}/mc-config.json"
+    remote_src: true
+  ignore_errors: true
+  tags: [backup]
+
+# Stop MinIO service for backup if needed
+- name: Stop MinIO service for backup if requested
+  systemd:
+    name: minio
+    state: stopped
+  when: not backup_config_only
+  tags: [backup]
+
+# Backup data directories if requested
+- name: Back up MinIO data directories (metadata only)
+  shell: |
+    find {{ item }} -type f -name "*.meta" -o -name "xl.meta" | tar -czf {{ backup_dir }}/{{ item | basename }}_meta.tar.gz -T -
+  loop: "{{ minio_data_dirs | default([]) }}"
+  when: not backup_config_only
+  ignore_errors: true
+  tags: [backup]
+
+# Create full backup archive
+- name: Create the backup archive
+  archive:
+    path: "{{ backup_dir }}"
+    dest: "{{ backup_file }}"
+    format: gz
+  tags: [backup]
+
+# Copy backup to final destination
+- name: Ensure remote backup location exists
+  file:
+    path: "{{ remote_backup_location }}"
+    state: directory
+    mode: '0755'
+  tags: [backup]
+
+- name: Copy backup to remote location
+  copy:
+    src: "{{ backup_file }}"
+    dest: "{{ remote_backup_location }}/minio_backup_{{ backup_timestamp }}.tar.gz"
+    remote_src: true
+  tags: [backup]
+
+# Start MinIO service if it was stopped
+- name: Start MinIO service after backup
+  systemd:
+    name: minio
+    state: started
+  when: not backup_config_only
+  tags: [backup]
+
+# Clean up temporary files
+- name: Clean up temporary backup files
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ backup_dir }}"
+    - "{{ backup_file }}"
+  tags: [backup]
+
+# Restore backup if requested
+- name: Restore backup
+  block:
+    - name: Create temporary restore directory
+      file:
+        path: /tmp/minio_restore
+        state: directory
+        mode: '0755'
+
+    - name: Extract backup archive
+      unarchive:
+        src: "{{ restore_backup }}"
+        dest: /tmp/minio_restore
+        remote_src: true
+
+    - name: Stop MinIO service for restore
+      systemd:
+        name: minio
+        state: stopped
+
+    - name: Restore configuration files
+      shell: |
+        cp -f /tmp/minio_restore/minio_backup_*/etc/default/minio /etc/default/minio || true
+        cp -f /tmp/minio_restore/minio_backup_*/etc/systemd/system/minio.service /etc/systemd/system/minio.service || true
+        cp -f /tmp/minio_restore/minio_backup_*/usr/lib/systemd/system/minio.service /usr/lib/systemd/system/minio.service || true
+        cp -f /tmp/minio_restore/minio_backup_*/etc/systemd/system/minio-tier.service /etc/systemd/system/minio-tier.service || true
+        cp -f /tmp/minio_restore/minio_backup_*/mc-config.json {{ ansible_env.HOME }}/.mc/config.json || true
+      ignore_errors: true
+
+    - name: Restore metadata files
+      shell: |
+        for meta_archive in /tmp/minio_restore/minio_backup_*/*_meta.tar.gz; do
+          dir_name=$(basename "$meta_archive" _meta.tar.gz)
+          if [ -d "/mnt/disk1/$dir_name" ]; then
+            tar -xzf "$meta_archive" -C /
+          elif [ -d "/mnt/disk2/$dir_name" ]; then
+            tar -xzf "$meta_archive" -C /
+          elif [ -d "/mnt/disk3/$dir_name" ]; then
+            tar -xzf "$meta_archive" -C /
+          fi
+        done
+      ignore_errors: true
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+
+    - name: Start MinIO service after restore
+      systemd:
+        name: minio
+        state: started
+
+    - name: Clean up restore directory
+      file:
+        path: /tmp/minio_restore
+        state: absent
+  when: restore_backup is defined
+  tags: [restore]
+
+# Informational display
+- name: Display backup information
+  debug:
+    msg: |
+      MinIO Backup Information:
+      Backup file: {{ remote_backup_location }}/minio_backup_{{ backup_timestamp }}.tar.gz
+
+      To restore this backup:
+      ansible-playbook -i inventory.ini deploy_minio_complete.yaml --tags restore -e "restore_backup={{ remote_backup_location }}/minio_backup_{{ backup_timestamp }}.tar.gz"
+  when: restore_backup is not defined
+  tags: [backup]

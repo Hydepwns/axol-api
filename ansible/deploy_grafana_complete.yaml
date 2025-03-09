@@ -1,0 +1,113 @@
+---
+# deploy_grafana_complete.yaml - Complete Grafana deployment playbook
+# Deploys Grafana monitoring for MinIO object storage
+
+- name: Deploy Grafana Monitoring for MinIO
+  hosts: grafana_targets
+  become: true
+  vars:
+    # Installation options
+    grafana_version: "9.5.2"
+    prometheus_version: "2.43.0"
+
+    # Configuration options
+    grafana_port: 3000
+    prometheus_port: 9090
+    dashboard_dir: "/var/lib/grafana/dashboards"
+    prometheus_storage_retention: "15d"
+
+    # Default admin password - now using structured credentials from secrets
+    grafana_admin_user: "{{ monitoring_credentials.grafana_admin_user | default('admin') }}"
+    grafana_admin_password: "{{ monitoring_credentials.grafana_admin_password | default('') }}"
+
+    # Data sources
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        url: "http://localhost:{{ prometheus_port }}"
+        is_default: true
+
+    # Dashboards to install
+    dashboards:
+      - name: "MinIO Overview"
+        path: "templates/grafana/dashboards/minio-overview.json"
+      - name: "MinIO Buckets"
+        path: "templates/grafana/dashboards/minio-buckets.json"
+      - name: "System Performance"
+        path: "templates/grafana/dashboards/system-performance.json"
+      - name: "Network Performance"
+        path: "templates/grafana/dashboards/network-performance.json"
+
+  pre_tasks:
+    # Security validation
+    - name: Validate monitoring credentials for production deployment
+      fail:
+        msg: |
+          ERROR: Default or empty credentials detected for Grafana in a production environment.
+          Please set secure credentials in your encrypted secrets file before deploying to production.
+          See ansible/group_vars/all/secrets_example.yml for an example.
+      when:
+        - (grafana_admin_password == "" or grafana_admin_password == "admin")
+        - ansible_host != "localhost"
+        - inventory_hostname != "localhost"
+
+    # Install dependencies
+    - name: Ensure prerequisite packages are installed
+      apt:
+        name:
+          - apt-transport-https
+          - software-properties-common
+          - wget
+          - curl
+          - gnupg
+        state: present
+        update_cache: yes
+
+  tasks:
+    # Prometheus
+    - name: Install Prometheus
+      include_role:
+        name: prometheus
+      when: inventory_hostname in groups['grafana_targets']
+
+    # Grafana
+    - name: Install Grafana
+      include_role:
+        name: grafana
+      when: inventory_hostname in groups['grafana_targets']
+
+    # MinIO metrics exporter
+    - name: Install MinIO Prometheus exporter
+      include_role:
+        name: minio_exporter
+      when: inventory_hostname in groups['minio_servers']
+
+  post_tasks:
+    # Verify Grafana is running
+    - name: Check Grafana health
+      uri:
+        url: "http://localhost:{{ grafana_port }}/api/health"
+        method: GET
+        user: "{{ grafana_admin_user }}"
+        password: "{{ grafana_admin_password }}"
+        force_basic_auth: yes
+        status_code: 200
+      register: grafana_health
+      ignore_errors: true
+
+    - name: Display Grafana health status
+      debug:
+        msg: "Grafana health check: {{ 'SUCCESS' if grafana_health.status == 200 else 'FAILED - please check manually' }}"
+
+    # Verify Prometheus is running
+    - name: Check Prometheus health
+      uri:
+        url: "http://localhost:{{ prometheus_port }}/-/healthy"
+        method: GET
+        status_code: 200
+      register: prometheus_health
+      ignore_errors: true
+
+    - name: Display Prometheus health status
+      debug:
+        msg: "Prometheus health check: {{ 'SUCCESS' if prometheus_health.status == 200 else 'FAILED - please check manually' }}"

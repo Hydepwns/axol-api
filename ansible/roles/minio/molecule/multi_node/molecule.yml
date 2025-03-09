@@ -1,0 +1,96 @@
+---
+dependency:
+  name: galaxy
+driver:
+  name: docker
+platforms:
+  - name: api-server
+    image: "geerlingguy/docker-${MOLECULE_DISTRO:-ubuntu2204}-ansible:latest"
+    command: ""
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    privileged: true
+    pre_build_image: true
+    tmpfs:
+      - /tmp
+      - /run
+      - /run/lock
+    networks:
+      - name: axol-test-network
+    groups:
+      - minio_servers
+
+  - name: minipc1
+    image: "geerlingguy/docker-${MOLECULE_DISTRO:-ubuntu2204}-ansible:latest"
+    command: ""
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    privileged: true
+    pre_build_image: true
+    tmpfs:
+      - /tmp
+      - /run
+      - /run/lock
+    networks:
+      - name: axol-test-network
+    groups:
+      - blockchain_nodes
+
+  - name: minipc2
+    image: "geerlingguy/docker-${MOLECULE_DISTRO:-ubuntu2204}-ansible:latest"
+    command: ""
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    privileged: true
+    pre_build_image: true
+    tmpfs:
+      - /tmp
+      - /run
+      - /run/lock
+    networks:
+      - name: axol-test-network
+    groups:
+      - blockchain_nodes
+
+  - name: turing-pi1
+    image: "geerlingguy/docker-${MOLECULE_DISTRO:-ubuntu2204}-ansible:latest"
+    command: ""
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    privileged: true
+    pre_build_image: true
+    tmpfs:
+      - /tmp
+      - /run
+      - /run/lock
+    networks:
+      - name: axol-test-network
+    groups:
+      - compute_nodes
+
+provisioner:
+  name: ansible
+  inventory:
+    group_vars:
+      minio_servers:
+        minio_version: "20241218131544.0.0"
+        minio_user: "minio-user"
+        minio_group: "minio-group"
+        minio_server_port: 9000
+        minio_console_port: 9001
+        minio_bind_address: "0.0.0.0"
+        minio_cluster_mode: false
+        minio_server_count: 1
+        minio_root_user: "minioadmin"
+        minio_root_password: "minioadmin"
+        blockchain_data_type: "ethereum"
+      blockchain_nodes:
+        node_type: "{{ 'dappnode' if inventory_hostname == 'minipc1' else 'avadao' }}"
+  playbooks:
+    converge: converge.yml
+verifier:
+  name: ansible
+lint: |
+  set -e
+  yamllint .
+  ansible-lint

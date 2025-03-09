@@ -5,6 +5,7 @@ This document explains the Access Control List (ACL) settings for the Axol API i
 ## Overview
 
 The Tailscale ACL defines:
+
 - Who can access which services
 - SSH access permissions between hosts
 - User groups and their permissions
@@ -67,6 +68,7 @@ The main `tailscale-acl.json` file is structured into several key sections:
 ```
 
 These rules grant:
+
 - Admin and developer access to MinIO service (ports 9000 and 9001) on the mini-axol server
 - Admin SSH access to all hosts on port 22
 - Admin, developer, and read-only user access to monitoring services (ports 3000, 9090, 9100)
@@ -85,6 +87,7 @@ These rules grant:
 ```
 
 The defined groups are:
+
 - **Admins**: Users with full administrative access
 - **Developers**: Development team members
 - **ReadOnly**: Users with restricted monitoring-only access
@@ -102,6 +105,7 @@ The defined groups are:
 ```
 
 Key infrastructure hosts:
+
 - **droos-macbook-pro**: Development machine
 - **dappnode-droo**: Blockchain node 1 (Dappnode)
 - **dravado**: Blockchain node 2 (Avadao)
@@ -135,6 +139,7 @@ Defines which groups can apply specific tags to devices.
 ```
 
 Controls:
+
 - Which subnets can be routed (10.0.0.0/16 and 192.168.0.0/24)
 - Who can use nodes as exit nodes (admins only)
 
@@ -176,6 +181,7 @@ Controls:
 ```
 
 These rules define SSH access patterns:
+
 1. Service-to-service SSH access between servers and MinIO
 2. Admin access to API servers
 3. Server access to development machines
@@ -194,6 +200,7 @@ These rules define SSH access patterns:
 ```
 
 Special attributes for nodes:
+
 - **funnel**: Enables Tailscale funnel for public HTTPS access on mini-axol
 
 ### Testing Configuration
@@ -218,6 +225,7 @@ Special attributes for nodes:
 ```
 
 The tests section defines validation rules:
+
 - Verify admin access to SSH and MinIO
 - Ensure developers can access MinIO but not blockchain nodes directly
 - Confirm read-only users can only access monitoring endpoints

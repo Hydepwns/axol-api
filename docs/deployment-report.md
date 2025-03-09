@@ -7,6 +7,7 @@ This report outlines a comprehensive assessment of the Axol API Infrastructure, 
 ## Repository Structure
 
 The repository is well-organized with clear separation between:
+
 - **ansible/**: Contains deployment playbooks, roles, and configuration
 - **docs/**: Documentation for various components
 - **scripts/**: Utility scripts for local deployment and management
@@ -80,6 +81,7 @@ Based on the repository analysis, here's the documented deployment process:
    - Tailscale installed on all hosts
 
 2. **Local Environment Setup**:
+
    ```bash
    # Install required Python dependencies
    pip install -r requirements.txt
@@ -96,6 +98,7 @@ Based on the repository analysis, here's the documented deployment process:
 ### Deployment Steps
 
 1. **Prepare Configuration**:
+
    ```bash
    # Create and encrypt secrets
    cp ansible/group_vars/all/secrets_example.yml ansible/group_vars/all/secrets.yml
@@ -103,24 +106,28 @@ Based on the repository analysis, here's the documented deployment process:
    ```
 
 2. **Deploy Tailscale Network**:
+
    ```bash
    # Configure Tailscale on all nodes
    ansible-playbook -i ansible/inventory.ini ansible/deploy_tailscale.yaml --ask-vault-pass
    ```
 
 3. **Deploy MinIO Object Storage**:
+
    ```bash
    # Deploy MinIO for blockchain data storage
    ansible-playbook -i ansible/inventory.ini ansible/deploy_minio.yaml --ask-vault-pass
    ```
 
 4. **Deploy Monitoring (Optional)**:
+
    ```bash
    # Deploy Grafana for monitoring
    ansible-playbook -i ansible/inventory.ini ansible/deploy_grafana.yaml --ask-vault-pass
    ```
 
 5. **Configure Blockchain Nodes**:
+
    ```bash
    # Configure blockchain nodes with MinIO access
    ansible-playbook -i ansible/inventory.ini ansible/deploy_minio.yaml --tags blockchain_nodes --ask-vault-pass
@@ -134,11 +141,13 @@ Based on the repository analysis, here's the documented deployment process:
 ### Backup and Recovery
 
 1. **Create Backup**:
+
    ```bash
    ansible-playbook -i ansible/inventory.ini ansible/backup_restore_minio.yaml --tags backup --ask-vault-pass
    ```
 
 2. **Restore from Backup**:
+
    ```bash
    ansible-playbook -i ansible/inventory.ini ansible/backup_restore_minio.yaml --tags restore -e "restore_file=/path/to/backup.tar.gz" --ask-vault-pass
    ```

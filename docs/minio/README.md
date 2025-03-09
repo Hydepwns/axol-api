@@ -243,6 +243,7 @@ bash scripts/deploy_minio_local.sh
 ```
 
 This script includes:
+
 - Interactive security warnings for default credentials
 - System package updates
 - MinIO server and client installation
@@ -351,6 +352,7 @@ ansible-playbook -i ansible/inventory.ini ansible/backup_restore_minio.yaml
 ```
 
 This will create a backup including:
+
 - MinIO service configuration files
 - MinIO client configuration
 - Essential system settings

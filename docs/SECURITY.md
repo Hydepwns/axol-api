@@ -27,11 +27,13 @@ ansible-vault view ansible/group_vars/all/secrets.yml
 Choose one of these methods to manage your vault password:
 
 1. **Prompt for password** (more secure, less convenient):
+
    ```bash
    ansible-playbook -i inventory.ini your_playbook.yml --ask-vault-pass
    ```
 
 2. **Use a password file** (more convenient, requires file protection):
+
    ```bash
    # Create a password file
    echo "your-secure-vault-password" > ~/.vault_pass
@@ -42,6 +44,7 @@ Choose one of these methods to manage your vault password:
    ```
 
 3. **Environment variable** (for CI/CD environments):
+
    ```bash
    # Store password in environment variable
    export ANSIBLE_VAULT_PASSWORD="your-secure-vault-password"
@@ -95,12 +98,14 @@ pre-commit run --all-files
 ### Never Hardcode Sensitive Values
 
 **Bad practice** (NEVER do this):
+
 ```yaml
 minio_access_key: "minioadmin"
 minio_secret_key: "my-actual-password-123"
 ```
 
 **Good practice**:
+
 ```yaml
 minio_access_key: "{{ minio_credentials.access_key }}"
 minio_secret_key: "{{ minio_credentials.secret_key }}"

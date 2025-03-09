@@ -257,6 +257,7 @@ function mcsetup() {
 Common issues and their solutions:
 
 1. **Connection Problems**:
+
    ```bash
    # Check connectivity
    telnet mini-axol.tail9b2ce8.ts.net 9000
@@ -266,6 +267,7 @@ Common issues and their solutions:
    ```
 
 2. **Authentication Issues**:
+
    ```bash
    # Reset configuration
    rm /root/.mc/config.json
@@ -273,6 +275,7 @@ Common issues and their solutions:
    ```
 
 3. **Permission Problems**:
+
    ```bash
    # Verify executable permissions
    ls -la /usr/local/bin/mc

@@ -121,6 +121,7 @@ tailscale status
 ### Common Issues
 
 1. **Connection Problems**:
+
    ```bash
    # Check Tailscale status
    sudo tailscale status

@@ -16,6 +16,15 @@ include:
   - "**/*.md"
   - "**/*.markdown"
 
+# Exclude these directories from Jekyll processing to avoid Liquid template errors
+exclude:
+  - ansible/
+  - .ansible/
+  - scripts/
+  - venv/
+  - .github/
+  - .vscode/
+
 # Theme overrides
 sass:
   style: compressed
